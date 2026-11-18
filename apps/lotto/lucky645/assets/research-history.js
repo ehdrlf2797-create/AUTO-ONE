@@ -22,6 +22,9 @@
           (item.zScore !== undefined && !Number.isFinite(Number(item.zScore))))
         throw new Error('전략 성능 데이터가 올바르지 않습니다.');
     }
+    const rawRunId = report.runId === undefined || report.runId === null ? createdAt : report.runId;
+    if (typeof rawRunId !== 'string' || !rawRunId.trim() || rawRunId.length > 128)
+      throw new Error('연구 실행 ID가 올바르지 않습니다.');
     const simulationCount = Number(report.simulationCount ?? (version === 1 ? 0 : NaN));
     if (!Number.isSafeInteger(simulationCount) || simulationCount < 0 || simulationCount > 10000000 || (version >= 2 && simulationCount < 1))
       throw new Error('시뮬레이션 횟수가 올바르지 않습니다.');
@@ -33,9 +36,11 @@
     cloned.evaluation.strategies = cloned.evaluation.strategies.map(item => {
       const baseline = Number.isFinite(Number(item.baselineAverage)) ? Number(item.baselineAverage) : Number(cloned.evaluation.baselineAverage ?? 0.8);
       const average = Number(item.averageMatches);
+      if (item.id.length > 128 || item.label.length > 120) throw new Error('전략 이름 또는 ID가 너무 깁니다.');
       return { ...item, baselineAverage: baseline, delta: Number.isFinite(Number(item.delta)) ? Number(item.delta) : average - baseline,
         zScore: Number.isFinite(Number(item.zScore)) ? Number(item.zScore) : 0 };
     });
+    if (new TextEncoder().encode(JSON.stringify(cloned)).length > 2097152) throw new Error('연구 보고서가 2MB 제한을 초과합니다.');
     return cloned;
   }
   function normalizeArchive(raw) {
