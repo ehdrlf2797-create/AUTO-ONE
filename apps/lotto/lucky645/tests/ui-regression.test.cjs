@@ -11,7 +11,7 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'assets/app.css'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
 
-test('all eight app sections are reachable from the mobile navigation', () => {
+test('all nine app sections are reachable from the mobile navigation', () => {
   const navStart = html.indexOf('<nav class="mobile-nav"');
   assert.notEqual(navStart, -1, 'mobile navigation must exist');
   const navEnd = html.indexOf('</nav>', navStart);
@@ -19,8 +19,8 @@ test('all eight app sections are reachable from the mobile navigation', () => {
   const nav = html.slice(navStart, navEnd);
   const pages = [...nav.matchAll(/data-page="([^"]+)"/g)].map(match => match[1]);
 
-  assert.equal(pages.length, 8, 'all eight sections should be represented');
-  assert.equal(new Set(pages).size, 8, 'navigation targets should be unique');
+  assert.equal(pages.length, 9, 'all nine sections should be represented');
+  assert.equal(new Set(pages).size, 9, 'navigation targets should be unique');
   for (const page of pages) {
     assert.ok(html.includes(`id="page-${page}"`), `missing page container for ${page}`);
   }
@@ -59,7 +59,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-predict-bulk-save-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-research-lab-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -162,4 +162,15 @@ test('generator page supports one-click bulk save and displays deduplicated odds
   assert.match(app, /if\(!persistSaved\(\[\.\.\.prepared\.entries,\.\.\.saved\]\)\) return false/);
   assert.match(css, /\.generator-summary/);
   assert.match(css, /\.generator-result-actions/);
+});
+
+
+test('research lab is reachable and exposes fixed research configuration', () => {
+  assert.match(html, /id="page-research"/);
+  assert.match(html, /data-page="research"/);
+  assert.match(html, /id="runResearchBtn"/);
+  assert.match(html, /100 전략 · 1,000,000회/);
+  assert.match(html, /\/assets\/research\.js\?v=20261119-research-lab-1/);
+  assert.match(app, /runResearchLab/);
+  assert.match(app, /RESEARCH_CANDIDATES_KEY/);
 });

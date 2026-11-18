@@ -19,6 +19,7 @@
     <button data-page="stats"><span class="nav-icon">▥</span>번호 통계</button>
     <button data-page="analytics"><span class="nav-icon">⌁</span>고급 분석실</button>
     <button data-page="simulation"><span class="nav-icon">◉</span>시뮬레이션</button>
+    <button data-page="research"><span class="nav-icon">⚗</span>AI 연구소</button>
     <button data-page="checker"><span class="nav-icon">✓</span>당첨 확인</button>
     <button data-page="saved"><span class="nav-icon">▣</span>내 번호 보관함</button>
     <button data-page="history"><span class="nav-icon">◷</span>회차별 당첨번호</button>
@@ -126,6 +127,28 @@
     <div class="notice" style="margin-top:18px"><strong>중요한 한계:</strong> 이 실험은 공정한 추첨을 가정한 무작위 표본입니다. 이번 실험에서 많이 등장한 숫자는 실험의 우연한 변동으로 선택된 것이며, 실제 다음 회차의 당첨 확률을 높여주지 않습니다. 모든 유효한 6개 번호 조합의 1등 확률은 같습니다. 이 화면의 숫자는 재미와 실험용 참고 자료로만 이용하세요.</div>
   </section>
 
+  <section class="page" id="page-research">
+    <div class="split research-title-row" style="margin-bottom:20px"><div><div class="eyebrow">HYPOTHESIS & STRATEGY LAB</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">LUCKY 645 AI 연구소</h1><div class="panel-desc">전체 회차를 시간순으로 검증하고 100개 전략을 무작위 기준선과 비교합니다.</div></div><span class="badge green">100 전략 · 1,000,000회</span></div>
+    <div class="grid-3 research-kpis" style="margin-bottom:18px">
+      <div class="stat-card"><div class="stat-label">검증 가능한 전체 회차</div><div class="stat-value" id="researchDrawCount">-</div><div class="stat-foot" id="researchRoundRange">데이터 확인 대기</div></div>
+      <div class="stat-card"><div class="stat-label">비교 전략</div><div class="stat-value">100개</div><div class="stat-foot">10개 전략군 × 10개 기간</div></div>
+      <div class="stat-card"><div class="stat-label">자동 등록 후보</div><div class="stat-value" id="researchCandidateCount">0</div><div class="stat-foot">독립 검증 기준 통과 전략</div></div>
+    </div>
+    <div class="panel research-run-panel" style="margin-bottom:18px">
+      <div class="panel-head"><div><div class="panel-title">① 전체 데이터 연구 실행</div><div class="panel-desc">학습 구간과 마지막 20% 검증 구간을 시간순으로 분리합니다. 전략은 검증 구간의 미래 번호를 볼 수 없습니다.</div></div><span class="badge yellow" id="researchDataStatus">데이터 확인 중</span></div>
+      <div class="research-config-grid"><div class="research-config"><span>데이터 범위</span><strong>전체 연속 회차</strong></div><div class="research-config"><span>전략 비교</span><strong>100개 전략</strong></div><div class="research-config"><span>몬테카를로</span><strong>1,000,000회</strong></div><div class="research-config"><span>가설 등록</span><strong>검증 통과 시 후보 등록</strong></div></div>
+      <button class="primary" id="runResearchBtn" style="width:100%;margin-top:16px" disabled>⚗ 전체 연구 시작</button>
+      <div id="researchProgressWrap" style="display:none;margin-top:15px"><div class="split"><span id="researchProgressLabel" class="small-label">연구 준비 중</span><strong id="researchProgressPct">0%</strong></div><div class="research-progress-track"><div id="researchProgressBar" class="research-progress-fill" style="width:0%"></div></div></div>
+      <div id="researchRunMessage" class="notice" style="margin-top:14px">데이터 연결이 완료되면 연구를 실행할 수 있습니다. 결과는 이 브라우저에 저장되며, 저장된 전략 후보는 실제 번호 추천에 자동 적용되지 않습니다.</div>
+    </div>
+    <div class="grid-2 research-output-grid">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">② 전략 검증 결과</div><div class="panel-desc">평균 일치 개수와 무작위 기준선의 차이를 비교합니다.</div></div><span class="badge" id="researchStrategySummary">아직 실행 전</span></div><div id="researchStrategyResults" class="empty">연구 실행 후 100개 전략의 성능 순위를 표시합니다.</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">③ 100만 회 무작위 검증</div><div class="panel-desc">고정된 기준 조합과 공정한 6/45 추첨의 일치 분포를 비교합니다.</div></div><span class="badge" id="researchMonteCarloSummary">1,000,000회 대기</span></div><div id="researchMonteCarloResults" class="empty">몬테카를로 실험 결과가 여기에 표시됩니다.</div></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">④ 검증된 가설 채택 후보</div><div class="panel-desc">100개 전략 다중 비교를 고려한 보수적 기준을 통과한 전략만 등록합니다. 후보는 검토 대상이며 예측력 확정이 아닙니다.</div></div><span class="badge" id="researchCandidateBadge">0개 후보</span></div><div id="researchCandidateList" class="empty">아직 등록된 후보가 없습니다. 유의미한 개선이 검증되지 않으면 0개로 유지됩니다.</div></div>
+    <div class="notice" style="margin-top:18px"><strong>연구 해석 원칙:</strong> 과거 데이터에서 좋은 결과가 나와도 다음 추첨의 1등 확률이 올라가는 것은 아닙니다. 100개 전략의 결과는 마지막 20% 독립 구간에서 무작위 기준선과 비교하며, z 점수 3.5 이상 및 양의 차이를 후보 등록 조건으로 사용합니다. 후보 등록은 실제 추천 알고리즘을 변경하지 않습니다.</div>
+  </section>
+
   <section class="page" id="page-checker">
     <div class="eyebrow">RESULT CHECKER</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">내 번호 당첨 확인</h1><div class="panel-desc" style="margin-bottom:20px">저장한 조합을 최신 당첨번호 또는 원하는 회차와 비교합니다.</div>
     <div class="grid-2"><div class="panel"><div class="panel-head"><div><div class="panel-title">확인할 회차</div><div class="panel-desc">회차 번호를 입력하세요.</div></div></div><div class="round-input"><input type="number" id="checkRound" min="1" placeholder="예: 1249"><button class="primary" id="loadRoundBtn">회차 불러오기</button></div><div id="drawToCheck" style="margin-top:18px" class="empty">당첨번호를 불러오면 여기에 표시됩니다.</div></div><div class="panel"><div class="panel-head"><div><div class="panel-title">저장한 번호 일괄 비교</div><div class="panel-desc">보관함의 모든 조합을 선택 회차와 비교합니다.</div></div></div><button class="primary" id="checkSavedBtn" style="width:100%">저장한 번호 당첨 확인</button><div id="checkResults" style="margin-top:14px" class="empty">확인 결과가 여기에 표시됩니다.</div></div></div>
@@ -163,8 +186,9 @@
   <div class="footer-note">데이터 출처: <a href="https://www.dhlottery.co.kr/lt645/intro" target="_blank" rel="noopener">동행복권 로또6/45</a> 최신 결과 + <a href="https://github.com/visionary153/lotto-api" target="_blank" rel="noopener">누적 회차 공개 JSON</a>. 누적 자료는 동행복권 공개 회차 기록을 바탕으로 한 제3자 데이터 사본이며, 앱은 최신 회차를 공식 결과와 재대조합니다. 보조 출처: <a href="https://cashlogy.kr/lotto/excel" target="_blank" rel="noopener">Cashlogy CSV</a>.<br>LUCKY 645는 독립 운영되는 정보·조합 도구이며 동행복권과 제휴 또는 공식 관계가 없습니다.</div>
 </main>
 </div>
-<nav class="mobile-nav" id="mobileNav" aria-label="주요 메뉴"><button class="active" data-page="home"><span>⌂</span>홈</button><button data-page="generator"><span>✦</span>추천</button><button data-page="stats"><span>▥</span>통계</button><button data-page="analytics"><span>⌁</span>분석실</button><button data-page="simulation"><span>◉</span>시뮬</button><button data-page="checker"><span>✓</span>당첨확인</button><button data-page="saved"><span>▣</span>보관함</button><button data-page="history"><span>◷</span>회차</button></nav>
+<nav class="mobile-nav" id="mobileNav" aria-label="주요 메뉴"><button class="active" data-page="home"><span>⌂</span>홈</button><button data-page="generator"><span>✦</span>추천</button><button data-page="stats"><span>▥</span>통계</button><button data-page="analytics"><span>⌁</span>분석실</button><button data-page="simulation"><span>◉</span>시뮬</button><button data-page="research"><span>⚗</span>연구소</button><button data-page="checker"><span>✓</span>당첨확인</button><button data-page="saved"><span>▣</span>보관함</button><button data-page="history"><span>◷</span>회차</button></nav>
 <div class="toast" id="toast"></div>
-<script defer src="/assets/app.js?v=20261119-predict-bulk-save-1"></script>
+<script defer src="/assets/research.js?v=20261119-research-lab-1"></script>
+<script defer src="/assets/app.js?v=20261119-research-lab-1"></script>
 </body>
 </html>
