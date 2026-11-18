@@ -170,6 +170,6 @@ test('migrates a legacy v1 report with missing newer metrics', () => {
   assert.equal(normalized.runId, legacy.createdAt);
   assert.equal(normalized.simulationCount, 0);
   assert.equal(normalized.evaluation.strategies[0].baselineAverage, 0.8);
-  assert.equal(normalized.evaluation.strategies[0].delta, 0.01);
+  assert.ok(Math.abs(normalized.evaluation.strategies[0].delta - 0.01) < 1e-12);
   assert.equal(normalized.evaluation.strategies[0].zScore, 0);
 });
