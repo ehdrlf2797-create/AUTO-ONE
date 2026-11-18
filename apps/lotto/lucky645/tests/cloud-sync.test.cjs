@@ -243,16 +243,17 @@ test('saved-combination tombstones carry a number fingerprint for duplicate-devi
   const end = appSource.indexOf('\nfunction cloudHeaders(',start);
   assert.notEqual(start,-1);
   assert.notEqual(end,-1);
+  const state = {rows:null,scheduled:0};
   const context = {
     loadCloudTombstones:()=>[],
-    persistCloudTombstones(rows){this.rows=rows;},
-    scheduleCloudSync(){this.scheduled=(this.scheduled||0)+1;},
+    persistCloudTombstones(rows){state.rows=rows;},
+    scheduleCloudSync(){state.scheduled++;},
     sortNums(numbers){return [...numbers].sort((a,b)=>a-b);}
   };
   vm.runInNewContext(appSource.slice(start,end)+'\nthis.markCloudDeleted=markCloudDeleted;',context);
   context.markCloudDeleted('saved_combination','device-a-id',[6,5,4,3,2,1]);
-  assert.equal(context.rows[0].numbers_key,'1-2-3-4-5-6');
-  assert.equal(context.scheduled,1);
+  assert.equal(state.rows[0].numbers_key,'1-2-3-4-5-6');
+  assert.equal(state.scheduled,1);
 });
 
 test('cloud sync suppresses other-device copies by deleted combination fingerprint', () => {
