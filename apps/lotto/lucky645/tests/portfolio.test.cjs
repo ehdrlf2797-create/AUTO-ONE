@@ -138,3 +138,67 @@ test('coverage strategy is supported by saved tickets and check history modes', 
   assert.ok(modes.length >= 2, 'saved ticket and check history validation should recognize coverage mode');
   assert.match(appSource, /coverage:'번호 커버리지 분산'/);
 });
+
+test('analytics preparation reuses already-normalized ordered history', () => {
+  const start=appSource.indexOf('function prepareAnalyticsSample(');
+  const end=appSource.indexOf('\nfunction calculateAnalytics(',start);
+  assert.notEqual(start,-1);
+  assert.notEqual(end,-1);
+  const context={};
+  vm.runInNewContext(
+    'function sortNums(numbers) { return [...numbers].sort((a,b)=>a-b); }\n' +
+    appSource.slice(start,end) +
+    '\nthis.prepareAnalyticsSample=prepareAnalyticsSample;',
+    context
+  );
+  const canonical=[
+    {round:1,numbers:[1,2,3,4,5,6]},
+    {round:2,numbers:[2,4,6,8,10,12]}
+  ];
+  assert.equal(context.prepareAnalyticsSample(canonical),canonical);
+});
+
+test('analytics preparation sorts and validates non-canonical history safely', () => {
+  const start=appSource.indexOf('function prepareAnalyticsSample(');
+  const end=appSource.indexOf('\nfunction calculateAnalytics(',start);
+  const context={};
+  vm.runInNewContext(
+    'function sortNums(numbers) { return [...numbers].sort((a,b)=>a-b); }\n' +
+    appSource.slice(start,end) +
+    '\nthis.prepareAnalyticsSample=prepareAnalyticsSample;',
+    context
+  );
+  const input=[
+    {round:2,numbers:[12,10,8,6,4,2]},
+    {round:1,numbers:[6,5,4,3,2,1]},
+    {round:3,numbers:[1,1,2,3,4,5]}
+  ];
+  const sample=context.prepareAnalyticsSample(input);
+  assert.deepEqual(Array.from(sample,row=>row.round),[1,2]);
+  assert.deepEqual(Array.from(sample[0].numbers),[1,2,3,4,5,6]);
+  assert.deepEqual(Array.from(sample[1].numbers),[2,4,6,8,10,12]);
+});
+
+test('saved backtest now precomputes draw lookups and prize tables only once', () => {
+  assert.match(appSource,/const preparedDraws = selectedDraws\.map\(draw =>/);
+  assert.match(appSource,/numberSet:new Set\(draw\.numbers\)/);
+  assert.match(appSource,/prizeByRank/);
+});
+
+test('portfolio evaluator returns identical metrics for arrays and precomputed winning-number sets', () => {
+  const context=makeContext();
+  const tickets=[
+    [1,2,3,4,5,6],
+    [1,7,8,9,10,11],
+    [12,13,14,15,16,17]
+  ];
+  const draw=[1,2,3,8,9,44];
+  const fromArray=context.evaluateTicketPortfolio(tickets,draw);
+  const fromSet=context.evaluateTicketPortfolio(tickets,new Set(draw));
+  assert.deepEqual(
+    {coverage:fromArray.coverage,maxExposure:fromArray.maxExposure,any3:fromArray.any3,any4:fromArray.any4,any5:fromArray.any5,any6:fromArray.any6},
+    {coverage:fromSet.coverage,maxExposure:fromSet.maxExposure,any3:fromSet.any3,any4:fromSet.any4,any5:fromSet.any5,any6:fromSet.any6}
+  );
+  assert.equal(fromSet.coverage,17);
+  assert.equal(fromSet.any3,true);
+});
