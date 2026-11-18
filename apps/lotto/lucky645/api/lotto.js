@@ -282,6 +282,8 @@ async function handler(req, res) {
 
     if (kind === 'status') {
       return sendJson(res, 200, {
+        cacheScope: 'serverless-instance-memory',
+        cacheNote: '이 상태는 현재 서버리스 인스턴스의 메모리 캐시만 나타냅니다. 다른 인스턴스의 캐시 상태를 대표하지 않습니다.',
         history: {
           available: Boolean(CACHE.history),
           rounds: CACHE.history?.length || 0,
