@@ -34,6 +34,8 @@ const SAVED_CHECKS_KEY = 'lucky645_saved_check_history_v1';
 const SIMULATION_HISTORY_KEY = 'lucky645_simulation_history_v1';
 const RESEARCH_REPORT_KEY = 'lucky645_research_report_v1';
 const RESEARCH_CANDIDATES_KEY = 'lucky645_research_candidates_v1';
+const RESEARCH_HISTORY_KEY = 'lucky645_research_history_v1';
+const MAX_RESEARCH_HISTORY = 12;
 const MAX_SIMULATION_HISTORY = 20;
 const AUTO_CHECK_KEY = 'lucky645_auto_check_meta_v1';
 const MAX_BACKUP_FILE_SIZE = 12 * 1024 * 1024;
@@ -75,6 +77,8 @@ let simulationProfiles = loadSimulationProfiles();
 let lastFrequencySimulation = null;
 let simulationGeneratedTickets = [];
 let researchReport = loadResearchReport();
+let researchHistory = loadResearchHistory(researchReport);
+let researchCompareRunId = '';
 let researchCandidates = loadResearchCandidates();
 let researchRunning = false;
 let researchLastRunMessage = '';
@@ -945,8 +949,34 @@ function renderLatest() {
 function loadResearchReport() {
   try {
     const value = JSON.parse(localStorage.getItem(RESEARCH_REPORT_KEY) || 'null');
-    return value && value.version === 1 && Array.isArray(value.evaluation?.strategies) ? value : null;
+    return value && value.version >= 1 && Array.isArray(value.evaluation?.strategies) ? value : null;
   } catch (_) { return null; }
+}
+
+function loadResearchHistory(currentReport) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RESEARCH_HISTORY_KEY) || '[]');
+    const history = Array.isArray(parsed) ? parsed.filter(item =>
+      item && item.version >= 1 && Array.isArray(item.evaluation?.strategies) && item.createdAt
+    ) : [];
+    const currentId = currentReport && (currentReport.runId || currentReport.createdAt);
+    if (currentReport && !history.some(item => (item.runId || item.createdAt) === currentId)) {
+      history.unshift(currentReport);
+    }
+    return history
+      .sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, MAX_RESEARCH_HISTORY);
+  } catch (_) {
+    return currentReport ? [currentReport] : [];
+  }
+}
+
+function recordResearchRun(report) {
+  const runId = report.runId || report.createdAt;
+  report.runId = runId;
+  researchHistory = [report, ...researchHistory.filter(item => (item.runId || item.createdAt) !== runId)]
+    .slice(0, MAX_RESEARCH_HISTORY);
+  researchCompareRunId = researchHistory[1] ? (researchHistory[1].runId || researchHistory[1].createdAt) : '';
 }
 
 function loadResearchCandidates() {
@@ -959,6 +989,7 @@ function loadResearchCandidates() {
 function persistResearchState() {
   try {
     if (researchReport) localStorage.setItem(RESEARCH_REPORT_KEY, JSON.stringify(researchReport));
+    localStorage.setItem(RESEARCH_HISTORY_KEY, JSON.stringify(researchHistory.slice(0, MAX_RESEARCH_HISTORY)));
     localStorage.setItem(RESEARCH_CANDIDATES_KEY, JSON.stringify(researchCandidates));
     return true;
   } catch (_) {
@@ -983,7 +1014,11 @@ function renderResearchResults() {
   if ($('researchStrategySummary')) $('researchStrategySummary').textContent = rows.length+'개 전략 · 후보 '+evaluation.candidateCount+'개';
   if (strategyTarget) {
     strategyTarget.className = 'table-wrap research-table-wrap';
-    strategyTarget.innerHTML = '<table class="analytics-table research-table"><thead><tr><th>순위</th><th>전략</th><th>평균 일치</th><th>무작위 기준</th><th>차이</th><th>z 점수</th><th>판정</th></tr></thead><tbody>'+rows.map((item,index)=>'<tr><td>'+(index+1)+'</td><td>'+escapeHtml(item.label)+'</td><td>'+item.averageMatches.toFixed(4)+'</td><td>'+item.baselineAverage.toFixed(4)+'</td><td class="'+(item.delta>0?'research-positive':'muted')+'">'+(item.delta>0?'+':'')+item.delta.toFixed(4)+'</td><td>'+item.zScore.toFixed(2)+'</td><td>'+(item.adjustedSignificance?'<span class="badge green">후보 등록</span>':'<span class="badge">미검증</span>')+'</td></tr>').join('')+'</tbody></table><div class="analytics-legend">검증 구간 '+evaluation.testStartRound+'~'+evaluation.testEndRound+'회 ('+formatNumber(evaluation.testCount)+'회) · 학습 '+formatNumber(evaluation.trainingCount)+'회 · 후보 기준 z ≥ '+evaluation.thresholdZ.toFixed(1)+'</div>';
+    strategyTarget.innerHTML = '<table class="analytics-table research-table"><thead><tr><th>순위</th><th>전략</th><th>평균 일치</th><th>무작위 평균</th><th>차이</th><th>무작위 200전 승률</th><th>양의 구간</th><th>z 점수</th><th>판정</th></tr></thead><tbody>'+rows.map((item,index)=>'<tr><td>'+(index+1)+'</td><td>'+escapeHtml(item.label)+'</td><td>'+item.averageMatches.toFixed(4)+'</td><td>'+item.baselineAverage.toFixed(4)+'</td><td class="'+(item.delta>0?'research-positive':'muted')+'">'+(item.delta>0?'+':'')+item.delta.toFixed(4)+'</td><td>'+(Number.isFinite(item.randomWinRate)?(item.randomWinRate*100).toFixed(1)+'%':'-')+'</td><td>'+(Number.isFinite(item.positiveFolds)?item.positiveFolds+'/'+(item.foldCount||evaluation.foldCount||'-'):'-')+'</td><td>'+item.zScore.toFixed(2)+'</td><td>'+(item.adjustedSignificance?'<span class="badge green">후보 등록</span>':'<span class="badge">미검증</span>')+'</td></tr>').join('')+'</tbody></table><div class="analytics-legend">검증 구간 '+evaluation.testStartRound+'~'+evaluation.testEndRound+'회 ('+formatNumber(evaluation.testCount)+'회) · 학습 '+formatNumber(evaluation.trainingCount)+'회 · 무작위 참가자 '+formatNumber(evaluation.baselineCount||evaluation.tournament?.randomBaselineCount||0)+'명 · 시간순 구간 '+(evaluation.foldCount||'-')+'개 · 후보 기준 z ≥ '+evaluation.thresholdZ.toFixed(1)+'</div>';
+  }
+  const tournament = evaluation.tournament;
+  if (strategyTarget && tournament) {
+    strategyTarget.innerHTML += '<div class="research-tournament-summary"><div class="research-tournament-heading"><strong>무작위 토너먼트</strong><span>'+formatNumber(tournament.randomBaselineCount)+'명 참가 · '+(evaluation.foldCount||'-')+'개 시간순 구간</span></div><div class="research-tournament-metrics"><div><span>무작위 평균</span><b>'+tournament.randomMean.toFixed(4)+'</b></div><div><span>무작위 표준편차</span><b>'+tournament.randomStdDev.toFixed(4)+'</b></div><div><span>하위 5% 기준</span><b>'+tournament.randomP05.toFixed(4)+'</b></div><div><span>중앙값</span><b>'+tournament.randomP50.toFixed(4)+'</b></div><div><span>상위 5% 기준</span><b>'+tournament.randomP95.toFixed(4)+'</b></div><div><span>최고 전략의 무작위 승률</span><b>'+((tournament.topStrategyRandomWinRate||0)*100).toFixed(1)+'%</b></div></div><div class="analytics-legend">'+escapeHtml(tournament.note||'무작위 참가자는 동일한 검증 회차를 사용했습니다.')+'</div></div>';
   }
   const monte = report.monteCarlo;
   if ($('researchMonteCarloSummary')) $('researchMonteCarloSummary').textContent = formatNumber(monte.attempts)+'회 완료';
@@ -1042,10 +1077,11 @@ function renderResearchLab() {
     } else if (researchReport) {
       message.textContent = '마지막 연구 완료: '+formatSyncTime(researchReport.createdAt)+' · '+formatNumber(researchReport.drawCount)+'회 데이터 · 100개 전략 · '+formatNumber(researchReport.simulationCount)+'회 시뮬레이션. 다시 실행하면 결과를 새로 계산합니다.';
     } else {
-      message.textContent = '데이터 '+formatNumber(count)+'회가 준비되었습니다. 버튼을 누르면 ① 전체 회차 검증 ② 100개 전략 비교 ③ 몬테카를로 1,000,000회 순서로 실제 계산합니다. 각 단계의 진행률이 표시됩니다.';
+      message.textContent = '데이터 '+formatNumber(count)+'회가 준비되었습니다. 버튼을 누르면 ① 전체 회차 검증 ② 무작위 참가자 200명 생성 ③ 100개 전략 토너먼트 ④ 몬테카를로 1,000,000회 순서로 실제 계산합니다. 각 단계의 진행률이 표시됩니다.';
     }
   }
   renderResearchResults();
+  renderResearchHistory();
 }
 
 function updateResearchProgress(label, completed, total, stageOffset, stageScale) {
@@ -1101,23 +1137,28 @@ async function runResearchLab() {
   if ($('researchProgressWrap')) $('researchProgressWrap').style.display = 'block';
   if ($('researchProgressBar')) $('researchProgressBar').style.width = '0%';
   if ($('researchRunMessage')) $('researchRunMessage').textContent = '데이터 사전 검사 통과: '+formatNumber(validatedDraws.length)+'개 회차. 이제 100개 전략을 평가합니다.';
-  updateResearchProgress('1/3 전체 회차 검증 완료 · 전략 평가 준비', 0, 100, 0, 50);
+  updateResearchProgress('1/4 전체 회차 검증 완료 · 토너먼트 준비', 0, 100, 0, 10);
   const startedAt = Date.now();
 
   try {
-    const report = await window.Lucky645Research.runStudy(validatedDraws, { strategyCount: 100, simulations: 1000000 }, progress => {
-      if (progress.stage === 'strategies') {
+    const report = await window.Lucky645Research.runStudy(validatedDraws, { strategyCount: 100, simulations: 1000000, baselineCount: 200 }, progress => {
+      if (progress.stage === 'baselines') {
+        if (button) button.textContent = '무작위 참가자 '+progress.completed+'/'+progress.total;
+        updateResearchProgress('2/4 무작위 기준선 '+progress.completed+' / '+progress.total+'명', progress.completed, progress.total, 0, 10);
+        if (message) message.textContent = '독립 무작위 기준 참가자를 생성하고 있습니다. '+progress.completed+' / '+progress.total+'명 완료.';
+      } else if (progress.stage === 'strategies') {
         if (button) button.textContent = '전략 평가 '+progress.completed+'/'+progress.total;
-        updateResearchProgress('2/3 전략 평가 '+progress.completed+' / '+progress.total, progress.completed, progress.total, 0, 50);
-        if (message) message.textContent = '100개 전략을 실제 검증 구간에 적용 중입니다. '+progress.completed+' / '+progress.total+'개 완료.';
-      } else {
+        updateResearchProgress('3/4 전략 토너먼트 '+progress.completed+' / '+progress.total, progress.completed, progress.total, 10, 40);
+        if (message) message.textContent = '100개 전략을 5개 시간순 검증 구간과 무작위 참가자 200명에 비교 중입니다. '+progress.completed+' / '+progress.total+'개 완료.';
+      } else if (progress.stage === 'montecarlo') {
         if (button) button.textContent = '시뮬레이션 '+formatNumber(progress.completed)+'회';
-        updateResearchProgress('3/3 몬테카를로 '+formatNumber(progress.completed)+' / '+formatNumber(progress.total), progress.completed, progress.total, 50, 50);
+        updateResearchProgress('4/4 몬테카를로 '+formatNumber(progress.completed)+' / '+formatNumber(progress.total), progress.completed, progress.total, 50, 50);
         if (message) message.textContent = '몬테카를로 무작위 추첨 계산 중입니다. '+formatNumber(progress.completed)+' / '+formatNumber(progress.total)+'회 완료.';
       }
     });
     report.elapsedMs = Date.now() - startedAt;
     researchReport = report;
+    recordResearchRun(report);
     const existing = new Set(researchCandidates.map(item=>item.id));
     const newCandidates = report.evaluation.strategies.filter(item=>item.adjustedSignificance && !existing.has(item.id));
     const createdAt = new Date().toISOString();
@@ -1146,6 +1187,95 @@ async function runResearchLab() {
     renderResearchLab();
     // 완료/실패 메시지는 renderResearchLab의 기본 안내문보다 우선합니다.
   }
+}
+
+
+function researchReportSummary(report) {
+  const rows = report && report.evaluation && Array.isArray(report.evaluation.strategies) ? report.evaluation.strategies : [];
+  const average = rows.length ? rows.reduce((sum,item)=>sum+Number(item.averageMatches||0),0)/rows.length : 0;
+  const top = rows[0] || null;
+  return {
+    average,
+    baseline: Number(report?.evaluation?.baselineAverage || 0),
+    topAverage: Number(top?.averageMatches || 0),
+    topLabel: top?.label || '없음',
+    topWinRate: Number(top?.randomWinRate || 0),
+    candidates: Number(report?.evaluation?.candidateCount || 0),
+    testCount: Number(report?.evaluation?.testCount || 0),
+    baselineCount: Number(report?.evaluation?.baselineCount || report?.evaluation?.tournament?.randomBaselineCount || 0)
+  };
+}
+
+function renderResearchHistory() {
+  const select = $('researchCompareSelect');
+  const summary = $('researchCompareSummary');
+  const list = $('researchHistoryList');
+  const history = researchHistory.slice(0, MAX_RESEARCH_HISTORY);
+  if (select) {
+    const options = history.slice(1).map(item => ({
+      id: item.runId || item.createdAt,
+      label: formatSyncTime(item.createdAt)+' · '+formatNumber(item.drawCount)+'회 데이터'
+    }));
+    if (!options.some(item=>item.id===researchCompareRunId)) {
+      researchCompareRunId = options[0]?.id || '';
+    }
+    select.innerHTML = options.length
+      ? options.map(item=>'<option value="'+escapeHtml(item.id)+'">'+escapeHtml(item.label)+'</option>').join('')
+      : '<option value="">비교할 이전 연구가 없습니다</option>';
+    select.disabled = options.length === 0;
+    if (researchCompareRunId) select.value = researchCompareRunId;
+  }
+  if (summary) {
+    const current = history[0] || researchReport;
+    const previous = history.find(item => (item.runId || item.createdAt) === researchCompareRunId);
+    if (!current) {
+      summary.className = 'empty';
+      summary.textContent = '연구가 아직 실행되지 않았습니다. 첫 실행이 완료되면 이후 연구부터 자동 비교합니다.';
+    } else if (!previous) {
+      summary.className = 'empty';
+      summary.textContent = '첫 연구 이력이 저장되었습니다. 다음 연구 실행 후 성능 변화가 자동 비교됩니다.';
+    } else {
+      const now = researchReportSummary(current);
+      const before = researchReportSummary(previous);
+      const delta = now.average - before.average;
+      const baselineDelta = now.baseline - before.baseline;
+      const signed = value => (value > 0 ? '+' : '') + value.toFixed(4);
+      summary.className = 'research-comparison';
+      summary.innerHTML = '<div class="research-comparison-heading"><strong>최근 연구와 선택한 이전 연구</strong><span>'+escapeHtml(formatSyncTime(previous.createdAt))+' 기준</span></div><div class="research-comparison-grid"><div><span>100개 전략 평균 변화</span><strong class="'+(delta>0?'research-positive':delta<0?'research-negative':'')+'">'+signed(delta)+'</strong></div><div><span>무작위 기준 평균 변화</span><strong>'+signed(baselineDelta)+'</strong></div><div><span>최고 전략 무작위 승률</span><strong>'+ (now.topWinRate*100).toFixed(1)+'%</strong></div><div><span>채택 후보 변화</span><strong>'+now.candidates+'개 / 이전 '+before.candidates+'개</strong></div></div><div class="analytics-legend">현재 최고 전략: '+escapeHtml(now.topLabel)+' · 직전 최고 전략: '+escapeHtml(before.topLabel)+' · 평균은 각 실행의 100개 전략 평균이며, 실행 간 데이터 구간이 다르면 직접적인 성능 우위로 단정할 수 없습니다.</div>';
+    }
+  }
+  if (list) {
+    if (!history.length) {
+      list.className = 'empty';
+      list.textContent = '완료된 연구 이력이 없습니다.';
+    } else {
+      list.className = 'research-history-list';
+      list.innerHTML = history.map((item,index)=>{
+        const summary = researchReportSummary(item);
+        const tournament = item.evaluation?.tournament;
+        return '<div class="research-history-row"><div class="research-history-main"><strong>'+(index===0?'최근 연구':'이전 연구 '+index)+'</strong><span>'+escapeHtml(formatSyncTime(item.createdAt))+' · '+formatNumber(item.firstRound||1)+'~'+formatNumber(item.lastRound||item.drawCount)+'회차</span></div><div class="research-history-metrics"><span>전략 평균 <b>'+summary.average.toFixed(4)+'</b></span><span>무작위 '+summary.baseline.toFixed(4)+'</span><span>후보 '+summary.candidates+'개</span><span>토너먼트 '+formatNumber(tournament?.randomBaselineCount||summary.baselineCount)+'명</span><span>실험 '+formatNumber(item.simulationCount)+'회</span></div></div>';
+      }).join('');
+    }
+  }
+}
+
+function exportResearchHistory() {
+  if (!researchHistory.length) return toast('내보낼 연구 이력이 없습니다.');
+  const payload = {
+    schema: 'lucky645-research-history-v1',
+    exportedAt: new Date().toISOString(),
+    runs: researchHistory
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'lucky645-research-history-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  toast('연구 이력 파일을 내보냈습니다.');
 }
 
 function navigate(page) {
@@ -2910,6 +3040,8 @@ function bindEvents() {
   document.querySelectorAll('[data-analytics-period]').forEach(button=>button.addEventListener('click',()=>{analyticsPeriod=button.dataset.analyticsPeriod;renderAnalytics();}));
   $('runSimulationBtn').addEventListener('click',runAnalyticsSimulation);
   $('runResearchBtn').addEventListener('click',runResearchLab);
+  if ($('researchCompareSelect')) $('researchCompareSelect').addEventListener('change',()=>{researchCompareRunId=$('researchCompareSelect').value;renderResearchHistory();});
+  if ($('exportResearchHistoryBtn')) $('exportResearchHistoryBtn').addEventListener('click',exportResearchHistory);
   $('runPortfolioSimulationBtn').addEventListener('click',runPortfolioSimulation);
   $('runSimulationStudioBtn').addEventListener('click',runSimulationStudio);
   $('saveSimulationResultBtn').addEventListener('click',saveCurrentSimulationResult);

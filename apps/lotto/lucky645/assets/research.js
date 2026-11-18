@@ -152,33 +152,81 @@
     return matches;
   }
 
-  async function evaluateStrategies(draws, strategies, onProgress) {
+  function percentile(sortedValues, fraction) {
+    if (!sortedValues.length) return 0;
+    const index = Math.max(0, Math.min(sortedValues.length - 1, Math.ceil(fraction * sortedValues.length) - 1));
+    return sortedValues[index];
+  }
+
+  async function evaluateStrategies(draws, strategies, onProgress, options) {
     const { prefix, lastSeen } = buildPrefixData(draws);
     const testStart = Math.max(100, Math.floor(draws.length * 0.8));
     const testCount = draws.length - testStart;
     if (testCount < 30) throw new Error('독립 검증 구간이 30회보다 짧습니다.');
-    const baselineRng = createRng('lucky645-research-baseline-v1');
-    const baselineScores = new Int8Array(testCount);
+
+    const baselineCount = Math.max(100, Math.min(500, Math.floor(Number(options && options.baselineCount) || 200)));
+    const foldCount = Math.min(5, Math.max(3, Math.floor(testCount / 10)));
+    const seed = String(options && options.seed || 'lucky645-research-default-v2');
+    const baselineSumByOffset = new Float64Array(testCount);
+    const foldBounds = Array.from({ length: foldCount }, (_, fold) => ({
+      start: Math.floor(fold * testCount / foldCount),
+      end: Math.floor((fold + 1) * testCount / foldCount)
+    }));
+    const baselineEntrants = [];
+    const baselineFoldTotals = Array(foldCount).fill(0);
     let baselineTotal = 0;
-    for (let offset = 0; offset < testCount; offset++) {
-      const actual = draws[testStart + offset].numbers;
-      const score = scoreTicket(randomTicket(baselineRng), actual);
-      baselineScores[offset] = score;
-      baselineTotal += score;
+
+    // 토너먼트의 무작위 기준선은 하나의 운 좋은 조합이 아니라 독립 시드의 무작위 참가자 여러 명으로 구성합니다.
+    for (let entrantIndex = 0; entrantIndex < baselineCount; entrantIndex++) {
+      const rng = createRng('lucky645:random-entrant:v2:' + seed + ':' + entrantIndex);
+      let total = 0;
+      const foldTotals = Array(foldCount).fill(0);
+      for (let offset = 0; offset < testCount; offset++) {
+        const actual = draws[testStart + offset].numbers;
+        const matches = scoreTicket(randomTicket(rng), actual);
+        total += matches;
+        baselineTotal += matches;
+        baselineSumByOffset[offset] += matches;
+        for (let fold = 0; fold < foldCount; fold++) {
+          if (offset >= foldBounds[fold].start && offset < foldBounds[fold].end) {
+            foldTotals[fold] += matches;
+            baselineFoldTotals[fold] += matches;
+            break;
+          }
+        }
+      }
+      baselineEntrants.push({ averageMatches: total / testCount, foldTotals });
+      if ((entrantIndex + 1) % 25 === 0) {
+        if (typeof onProgress === 'function') onProgress({ stage: 'baselines', completed: entrantIndex + 1, total: baselineCount });
+        await new Promise((resolve) => root.setTimeout(resolve, 0));
+      }
     }
-    const baselineAverage = baselineTotal / testCount;
+
+    const baselineAverage = baselineTotal / (baselineCount * testCount);
+    const baselineByRound = Array.from(baselineSumByOffset, value => value / baselineCount);
+    const baselineFoldAverages = foldBounds.map((bounds, fold) => {
+      const length = Math.max(1, bounds.end - bounds.start);
+      return baselineFoldTotals[fold] / (baselineCount * length);
+    });
+    const randomScores = baselineEntrants.map(item => item.averageMatches).sort((a, b) => a - b);
+    const randomMean = baselineAverage;
+    const randomVariance = randomScores.reduce((sum, value) => sum + (value - randomMean) ** 2, 0) / Math.max(1, randomScores.length - 1);
+    const randomStdDev = Math.sqrt(randomVariance);
     const results = [];
 
     for (let strategyIndex = 0; strategyIndex < strategies.length; strategyIndex++) {
       const strategy = strategies[strategyIndex];
-      const rng = createRng('lucky645:' + strategy.id + ':v1');
+      const rng = createRng('lucky645:' + strategy.id + ':v2:' + seed);
       let total = 0, hits3 = 0, hits4 = 0, hits5 = 0, hits6 = 0;
       let diffTotal = 0, diffSquares = 0;
+      const foldTotals = Array(foldCount).fill(0);
+      const foldHits3 = Array(foldCount).fill(0);
+
       for (let offset = 0; offset < testCount; offset++) {
         const index = testStart + offset;
         const ticket = pickStrategyTicket(strategy, index, prefix, lastSeen, rng);
         const matches = scoreTicket(ticket, draws[index].numbers);
-        const difference = matches - baselineScores[offset];
+        const difference = matches - baselineByRound[offset];
         total += matches;
         if (matches >= 3) hits3++;
         if (matches >= 4) hits4++;
@@ -186,16 +234,43 @@
         if (matches === 6) hits6++;
         diffTotal += difference;
         diffSquares += difference * difference;
+        for (let fold = 0; fold < foldCount; fold++) {
+          if (offset >= foldBounds[fold].start && offset < foldBounds[fold].end) {
+            foldTotals[fold] += matches;
+            if (matches >= 3) foldHits3[fold]++;
+            break;
+          }
+        }
       }
+
+      const averageMatches = total / testCount;
       const delta = diffTotal / testCount;
       const variance = Math.max(0, diffSquares / testCount - delta * delta);
       const standardError = Math.sqrt(variance / testCount);
       const zScore = standardError > 0 ? delta / standardError : 0;
-      const adjustedSignificance = delta > 0 && zScore >= 3.5;
+      const foldStats = foldBounds.map((bounds, fold) => {
+        const length = Math.max(1, bounds.end - bounds.start);
+        const average = foldTotals[fold] / length;
+        const foldDelta = average - baselineFoldAverages[fold];
+        return {
+          fold: fold + 1,
+          startRound: draws[testStart + bounds.start].round,
+          endRound: draws[testStart + bounds.end - 1].round,
+          testCount: length,
+          averageMatches: average,
+          baselineAverage: baselineFoldAverages[fold],
+          delta: foldDelta,
+          hit3Rate: foldHits3[fold] / length
+        };
+      });
+      const positiveFolds = foldStats.filter(item => item.delta > 0).length;
+      const randomWins = randomScores.filter(value => value <= averageMatches).length;
+      const randomWinRate = randomWins / baselineCount;
+      const adjustedSignificance = delta > 0 && zScore >= 3.5 && positiveFolds >= Math.ceil(foldCount * 0.8);
       results.push({
         ...strategy,
         testCount,
-        averageMatches: total / testCount,
+        averageMatches,
         baselineAverage,
         delta,
         hits3,
@@ -204,13 +279,26 @@
         hits6,
         hit3Rate: hits3 / testCount,
         zScore,
+        foldStats,
+        positiveFolds,
+        foldCount,
+        randomWins,
+        randomWinRate,
+        randomPercentile: randomWinRate * 100,
         adjustedSignificance,
         verdict: adjustedSignificance ? 'candidate' : 'not_verified'
       });
-      if (typeof onProgress === 'function') onProgress(strategyIndex + 1, strategies.length);
+      if (typeof onProgress === 'function') onProgress({ stage: 'strategies', completed: strategyIndex + 1, total: strategies.length });
       if (strategyIndex < strategies.length - 1) await new Promise((resolve) => root.setTimeout(resolve, 0));
     }
-    results.sort((a, b) => b.averageMatches - a.averageMatches || b.hit3Rate - a.hit3Rate || a.id.localeCompare(b.id));
+
+    results.sort((a, b) =>
+      b.averageMatches - a.averageMatches ||
+      b.randomWinRate - a.randomWinRate ||
+      b.positiveFolds - a.positiveFolds ||
+      a.id.localeCompare(b.id)
+    );
+    const top = results[0];
     return {
       strategies: results,
       baselineAverage,
@@ -220,11 +308,27 @@
       trainingCount: testStart,
       candidateCount: results.filter((item) => item.adjustedSignificance).length,
       thresholdZ: 3.5,
-      note: '100개 전략에 대한 다중 비교를 고려한 보수적 탐색 기준입니다. 후보 등록은 예측 우위의 확정이나 당첨 보장을 뜻하지 않습니다.'
+      foldCount,
+      baselineCount,
+      tournament: {
+        entrantCount: baselineCount + strategies.length,
+        strategyCount: strategies.length,
+        randomBaselineCount: baselineCount,
+        randomMean,
+        randomStdDev,
+        randomP05: percentile(randomScores, 0.05),
+        randomP50: percentile(randomScores, 0.50),
+        randomP95: percentile(randomScores, 0.95),
+        topStrategyId: top && top.id,
+        topStrategyAverage: top ? top.averageMatches : 0,
+        topStrategyRandomWinRate: top ? top.randomWinRate : 0,
+        note: '무작위 참가자들은 동일한 검증 회차에서 각각 독립된 시드로 생성되었습니다. 토너먼트 순위는 과거 검증 결과이며 미래 당첨 확률을 뜻하지 않습니다.'
+      },
+      note: '전략 성능은 동일 회차의 무작위 참가자 평균과 비교하고, 5개 시간순 구간에서 재현성을 확인합니다. 후보 등록은 양의 차이, z ≥ 3.5, 80% 이상 구간의 양의 차이를 모두 요구하는 탐색 기준입니다.'
     };
   }
 
-  function combinations(n, k) {
+    function combinations(n, k) {
     if (k < 0 || k > n) return 0;
     let value = 1;
     for (let i = 1; i <= k; i++) value = value * (n - i + 1) / i;
@@ -240,7 +344,7 @@
     return exact;
   }
 
-  async function runMonteCarlo(attempts, referenceTicket, onProgress) {
+  async function runMonteCarlo(attempts, referenceTicket, onProgress, seed) {
     const count = Number(attempts);
     if (!Number.isSafeInteger(count) || count < 1 || count > 1000000) {
       throw new Error('몬테카를로 횟수는 1~1,000,000회 범위여야 합니다.');
@@ -251,7 +355,7 @@
     if (new Set(ticket).size !== 6 || ticket.some((n) => !Number.isInteger(n) || n < 1 || n > 45)) {
       throw new Error('기준 조합이 올바르지 않습니다.');
     }
-    const rng = createRng('lucky645-monte-carlo-1m-v1');
+    const rng = createRng('lucky645-monte-carlo-1m-v2:' + String(seed || 'default'));
     const numberCounts = new Uint32Array(46);
     const matchCounts = new Uint32Array(7);
     const ticketSet = new Set(ticket);
@@ -302,29 +406,39 @@
     const draws = normalizeDraws(rows);
     const strategyCount = Number(options && options.strategyCount || 100);
     const attempts = Number(options && options.simulations || 1000000);
+    const baselineCount = Number(options && options.baselineCount || 200);
     if (strategyCount !== 100) throw new Error('현재 연구 프로토콜은 100개 전략 비교로 고정되어 있습니다.');
     if (attempts !== 1000000) throw new Error('현재 연구 프로토콜은 1,000,000회 시뮬레이션으로 고정되어 있습니다.');
+    if (!Number.isInteger(baselineCount) || baselineCount < 100 || baselineCount > 500) {
+      throw new Error('무작위 토너먼트 참가자는 100~500명 범위여야 합니다.');
+    }
+    const seed = String(options && options.seed || 'run-' + Date.now());
     const strategies = generateStrategies();
-    const evaluation = await evaluateStrategies(draws, strategies, (done, total) => {
-      if (typeof onProgress === 'function') onProgress({ stage: 'strategies', completed: done, total });
-    });
+    const evaluation = await evaluateStrategies(draws, strategies, progress => {
+      if (typeof onProgress === 'function') onProgress(progress);
+    }, { baselineCount, seed });
     const monteCarlo = await runMonteCarlo(attempts, [1, 2, 3, 4, 5, 6], (done, total) => {
       if (typeof onProgress === 'function') onProgress({ stage: 'montecarlo', completed: done, total });
-    });
+    }, seed);
+    const createdAt = new Date().toISOString();
     return {
-      version: 1,
-      createdAt: new Date().toISOString(),
+      version: 2,
+      runId: createdAt + '-' + seed,
+      seed,
+      createdAt,
+      elapsedMs: null,
       drawCount: draws.length,
       firstRound: draws[0].round,
       lastRound: draws[draws.length - 1].round,
       strategyCount: strategies.length,
       simulationCount: attempts,
+      baselineCount,
       evaluation,
       monteCarlo
     };
   }
 
-  root.Lucky645Research = {
+    root.Lucky645Research = {
     TOTAL_COMBINATIONS,
     generateStrategies,
     normalizeDraws,

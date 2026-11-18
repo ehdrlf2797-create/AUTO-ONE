@@ -39,17 +39,45 @@ test('research data validation rejects gaps, invalid tickets and insufficient hi
   assert.throws(() => research.normalizeDraws(invalid), /유효하지 않은 회차/);
 });
 
-test('walk-forward evaluation compares all strategies with the same random baseline', async () => {
+test('100 strategies compete against 100 random entrants across chronological folds', async () => {
   const research = loadResearch();
   const draws = research.normalizeDraws(makeDraws(220));
-  const result = await research.evaluateStrategies(draws, research.generateStrategies());
+  const result = await research.evaluateStrategies(
+    draws,
+    research.generateStrategies(),
+    null,
+    { baselineCount: 100, seed: 'research-test-seed' }
+  );
   assert.equal(result.strategies.length, 100);
   assert.equal(result.testCount, 44);
   assert.equal(result.trainingCount, 176);
+  assert.equal(result.baselineCount, 100);
+  assert.equal(result.foldCount, 4);
+  assert.ok(Number.isFinite(result.baselineAverage));
   assert.ok(result.strategies.every(item => Number.isFinite(item.averageMatches)));
   assert.ok(result.strategies.every(item => Number.isFinite(item.zScore)));
   assert.ok(result.strategies.every(item => item.baselineAverage === result.baselineAverage));
+  assert.ok(result.strategies.every(item => item.foldStats.length === result.foldCount));
+  assert.ok(result.strategies.every(item => item.positiveFolds >= 0 && item.positiveFolds <= result.foldCount));
+  assert.ok(result.strategies.every(item => item.randomWinRate >= 0 && item.randomWinRate <= 1));
+  assert.equal(result.tournament.randomBaselineCount, 100);
+  assert.equal(result.tournament.strategyCount, 100);
+  assert.ok(result.tournament.randomP05 <= result.tournament.randomP50);
+  assert.ok(result.tournament.randomP50 <= result.tournament.randomP95);
   assert.equal(result.thresholdZ, 3.5);
+});
+
+test('random tournament is reproducible for the same seed', async () => {
+  const research = loadResearch();
+  const draws = research.normalizeDraws(makeDraws(180));
+  const strategies = research.generateStrategies();
+  const first = await research.evaluateStrategies(draws, strategies, null, { baselineCount: 100, seed: 'stable-seed' });
+  const second = await research.evaluateStrategies(draws, strategies, null, { baselineCount: 100, seed: 'stable-seed' });
+  assert.equal(first.baselineAverage, second.baselineAverage);
+  assert.equal(
+    JSON.stringify(first.strategies.slice(0, 10).map(item => [item.id, item.averageMatches, item.randomWinRate, item.positiveFolds])),
+    JSON.stringify(second.strategies.slice(0, 10).map(item => [item.id, item.averageMatches, item.randomWinRate, item.positiveFolds]))
+  );
 });
 
 test('exact match distribution sums to one and jackpot probability matches 6/45', () => {
@@ -80,5 +108,9 @@ test('research protocol refuses non-requested simulation and strategy counts', a
   await assert.rejects(
     research.runStudy(makeDraws(160), { strategyCount: 100, simulations: 10000 }),
     /1,000,000회/
+  );
+  await assert.rejects(
+    research.runStudy(makeDraws(160), { strategyCount: 100, simulations: 1000000, baselineCount: 50 }),
+    /100~500명/
   );
 });
