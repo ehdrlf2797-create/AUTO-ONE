@@ -138,3 +138,50 @@ test('coverage strategy is supported by saved tickets and check history modes', 
   assert.ok(modes.length >= 2, 'saved ticket and check history validation should recognize coverage mode');
   assert.match(appSource, /coverage:'번호 커버리지 분산'/);
 });
+
+test('analytics preparation reuses already-normalized ordered history', () => {
+  const start=appSource.indexOf('function prepareAnalyticsSample(');
+  const end=appSource.indexOf('\nfunction calculateAnalytics(',start);
+  assert.notEqual(start,-1);
+  assert.notEqual(end,-1);
+  const context={};
+  vm.runInNewContext(
+    'function sortNums(numbers) { return [...numbers].sort((a,b)=>a-b); }\n' +
+    appSource.slice(start,end) +
+    '\nthis.prepareAnalyticsSample=prepareAnalyticsSample;',
+    context
+  );
+  const canonical=[
+    {round:1,numbers:[1,2,3,4,5,6]},
+    {round:2,numbers:[2,4,6,8,10,12]}
+  ];
+  assert.equal(context.prepareAnalyticsSample(canonical),canonical);
+});
+
+test('analytics preparation sorts and validates non-canonical history safely', () => {
+  const start=appSource.indexOf('function prepareAnalyticsSample(');
+  const end=appSource.indexOf('\nfunction calculateAnalytics(',start);
+  const context={};
+  vm.runInNewContext(
+    'function sortNums(numbers) { return [...numbers].sort((a,b)=>a-b); }\n' +
+    appSource.slice(start,end) +
+    '\nthis.prepareAnalyticsSample=prepareAnalyticsSample;',
+    context
+  );
+  const input=[
+    {round:2,numbers:[12,10,8,6,4,2]},
+    {round:1,numbers:[6,5,4,3,2,1]},
+    {round:3,numbers:[1,1,2,3,4,5]}
+  ];
+  const sample=context.prepareAnalyticsSample(input);
+  assert.deepEqual(sample.map(row=>row.round),[1,2]);
+  assert.deepEqual(sample[0].numbers,[1,2,3,4,5,6]);
+  assert.deepEqual(sample[1].numbers,[2,4,6,8,10,12]);
+});
+
+test('saved backtest now precomputes draw lookups and prize tables only once', () => {
+  assert.match(appSource,/const preparedDraws = selectedDraws\.map\(draw =>/);
+  assert.match(appSource,/numberSet:new Set\(draw\.numbers\)/);
+  assert.match(appSource,/prizeByRank/);
+});
+
