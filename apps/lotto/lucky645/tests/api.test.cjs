@@ -88,8 +88,7 @@ test('does not disguise an invalid newest official row as an older valid round',
 test('negative optional prize, winner and sales values are discarded', () => {
   const draw = normalizeDraw({
     ...officialRound,
-    rnk1WnAmt:-100,
-    rnk1WnNope:-1,
+    ranks:[{rank:1,prize:-100,winners:-1}],
     wholEpsdSumNtslAmt:-500
   });
   assert.equal(draw.ranks[0].prize, null);
