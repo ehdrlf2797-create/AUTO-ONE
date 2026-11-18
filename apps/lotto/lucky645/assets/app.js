@@ -536,7 +536,7 @@ function persistSaved(nextSaved = saved) {
   try {
     localStorage.setItem(SAVED_KEY, JSON.stringify(next));
   } catch (_) {
-    toast('번호 보관함 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요. 기존 저장 내용은 유지됩니다.');
+    toast('번호 보관함 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.');
     return false;
   }
   if (next !== saved) saved = next;
