@@ -74,9 +74,9 @@ test('random tournament is reproducible for the same seed', async () => {
   const first = await research.evaluateStrategies(draws, strategies, null, { baselineCount: 100, seed: 'stable-seed' });
   const second = await research.evaluateStrategies(draws, strategies, null, { baselineCount: 100, seed: 'stable-seed' });
   assert.equal(first.baselineAverage, second.baselineAverage);
-  assert.deepEqual(
-    first.strategies.slice(0, 10).map(item => [item.id, item.averageMatches, item.randomWinRate, item.positiveFolds]),
-    second.strategies.slice(0, 10).map(item => [item.id, item.averageMatches, item.randomWinRate, item.positiveFolds])
+  assert.equal(
+    JSON.stringify(first.strategies.slice(0, 10).map(item => [item.id, item.averageMatches, item.randomWinRate, item.positiveFolds])),
+    JSON.stringify(second.strategies.slice(0, 10).map(item => [item.id, item.averageMatches, item.randomWinRate, item.positiveFolds]))
   );
 });
 
