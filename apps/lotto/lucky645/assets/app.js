@@ -1936,7 +1936,7 @@ function normalizeCloudHistoryRecord(row, remoteSavedById, localSaved) {
   const mapped = remoteSavedById.get(String(item.savedId));
   if (mapped) item.savedId = mapped;
   const numberKey = item.numbers.join('-');
-  const local = localSaved instanceof Map
+  const local = localSaved && typeof localSaved.get === 'function'
     ? localSaved.get(numberKey)
     : localSaved.find(entry => entry.numbers.join('-') === numberKey);
   if (local) item.savedId = local.id;
