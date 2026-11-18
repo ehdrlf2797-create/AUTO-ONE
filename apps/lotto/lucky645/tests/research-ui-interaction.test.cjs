@@ -70,6 +70,7 @@ function makeContext(engineOverride) {
     researchReport: null,
     researchHistory: [],
     researchCompareRunId: '',
+    MAX_RESEARCH_HISTORY: 12,
     researchRunning: false,
     researchLastRunMessage: '',
     researchLastRunTone: 'normal',
