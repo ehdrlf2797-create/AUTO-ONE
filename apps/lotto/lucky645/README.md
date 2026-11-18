@@ -41,7 +41,7 @@ Node.js가 설치된 환경에서 저장소 루트에서 실행합니다.
 
 ```powershell
 node --check apps/lotto/lucky645/api/lotto.js
-node --test apps/lotto/lucky645/tests/api.test.cjs
+node --test apps/lotto/lucky645/tests/*.test.cjs
 ```
 
 ## Vercel 배포 연결
