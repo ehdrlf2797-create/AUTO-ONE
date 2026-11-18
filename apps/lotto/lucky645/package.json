@@ -1,0 +1,13 @@
+{
+  "name": "auto-one-lucky645",
+  "version": "1.9.1",
+  "private": true,
+  "description": "LUCKY 645 module integrated into AUTO-ONE",
+  "scripts": {
+    "check": "node --check api/lotto.js && node --test tests/*.test.cjs",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
