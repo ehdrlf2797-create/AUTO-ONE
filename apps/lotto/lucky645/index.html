@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<meta name="theme-color" content="#10151d" />
+<meta name="theme-color" content="#0b111b" />
+<meta name="description" content="LUCKY 645에서 로또 6/45 공식 당첨 결과, 번호 통계, 조합 생성과 나만의 번호 보관함을 확인하세요." />
 <title>LUCKY 645 v1.9 | 로또 번호 추천</title>
 <link rel="stylesheet" href="/assets/app.css" />
 </head>
@@ -11,7 +12,7 @@
 <div class="app">
 <aside class="sidebar">
   <div class="brand"><div class="brand-mark">6</div><div><div class="brand-name">LUCKY 645</div><div class="brand-sub">LOTTO INSIGHT STUDIO</div></div></div>
-  <div class="nav-label">WORKSPACE</div>
+  <div class="nav-label">메뉴</div>
   <nav class="nav" id="sideNav">
     <button class="active" data-page="home"><span class="nav-icon">⌂</span>대시보드</button>
     <button data-page="generator"><span class="nav-icon">✦</span>번호 추천</button>
@@ -24,20 +25,20 @@
   <div class="side-bottom"><strong>🎯 LUCKY NOTE</strong><p>모든 조합의 1등 확률은 동일합니다. 통계는 재미와 참고를 위한 분석 정보입니다.</p></div>
 </aside>
 <main class="main">
-  <header class="topbar"><div><div class="eyebrow">LUCKY 645 · NUMBER LAB</div><div class="top-title" id="pageSubtitle">데이터와 무작위 조합으로 만드는 나만의 번호</div></div><div class="top-actions"><span class="pill" id="dataStatus" title="마우스를 올리면 데이터 연결 및 오류 정보를 볼 수 있습니다.">데이터 연결 확인 중</span><button class="icon-btn" id="refreshBtn" title="당첨 데이터 새로고침">↻</button></div></header>
+  <header class="topbar"><div><div class="eyebrow">LUCKY 645 · NUMBER LAB</div><div class="top-title" id="pageSubtitle">데이터와 무작위 조합으로 만드는 나만의 번호</div></div><div class="top-actions"><span class="pill" id="dataStatus" role="status" aria-live="polite" title="마우스를 올리면 데이터 연결 및 오류 정보를 볼 수 있습니다.">데이터 연결 확인 중</span><button class="icon-btn" id="refreshBtn" title="당첨 데이터 새로고침">↻</button></div></header>
 
   <section class="page active" id="page-home">
     <div class="hero">
-      <div class="hero-card"><div class="hero-kicker">YOUR NEXT COMBINATION STARTS HERE</div><h1>행운의 조합,<br>오늘은 어떤 숫자일까요?</h1><p>무작위 추천부터 과거 회차 통계까지. 마음에 드는 조합을 만들고 저장해 보세요.</p><button class="primary" onclick="navigate('generator')">번호 추천 시작하기&nbsp; ↗</button></div>
+      <div class="hero-card"><div class="hero-kicker">LUCKY 645 · NUMBER STUDIO</div><h1>행운의 조합,<br>오늘은 어떤 숫자일까요?</h1><p>무작위 추천부터 과거 회차 통계까지. 마음에 드는 조합을 만들고 저장해 보세요.</p><button class="primary" onclick="navigate('generator')">번호 추천 시작하기&nbsp; ↗</button></div>
       <div class="latest-card"><div class="card-top"><span class="card-label">가장 최근 추첨 결과</span><span class="split" style="gap:7px"><span class="badge yellow" id="latestVerification">확인 중</span><span class="round-chip" id="latestRound">확인 대기</span></span></div><div><div class="latest-numbers" id="latestBalls"></div><div class="latest-meta"><span id="latestDate">공식 데이터 확인 대기</span><span id="latestBonus">보너스 확인 대기</span></div></div><div class="split"><span class="small-label" id="latestSourceLabel">출처 확인 중</span><button class="text-link" onclick="navigate('history')">회차 확인 →</button></div></div>
     </div>
     <div class="grid-3" style="margin-bottom:18px">
       <div class="stat-card"><div class="stat-label">누적 분석 회차</div><div class="stat-value" id="statDrawCount">-</div><div class="stat-foot">데이터 연결 후 자동 집계</div></div>
-      <div class="stat-card"><div class="stat-label">내가 저장한 조합</div><div class="stat-value" id="statSaved">0</div><div class="stat-foot">이 기기에 안전하게 저장</div></div>
+      <div class="stat-card"><div class="stat-label">내가 저장한 조합</div><div class="stat-value" id="statSaved">0</div><div class="stat-foot">이 브라우저에 저장된 조합</div></div>
       <div class="stat-card"><div class="stat-label">전체 가능한 조합 수</div><div class="stat-value">8,145,060</div><div class="stat-foot">6개 번호를 고르는 전체 조합</div></div>
     </div>
     <div class="grid-2">
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">빠른 번호 추천</div><div class="panel-desc">완전 무작위·통계 참고·50:50 혼합 방식으로 조합을 만들어 보세요.</div></div><span class="badge green">READY</span></div><div class="mode-grid"><button class="mode-option selected" data-mode="random"><strong>✦ 완전 무작위</strong><span>매번 새롭게 생성하는 기본 조합</span></button><button class="mode-option" data-mode="balanced"><strong>◈ 균형 조합</strong><span>홀짝·번호 구간·합계를 참고</span></button><button class="mode-option" data-mode="stats"><strong>▥ 통계 참고</strong><span>과거 출현 빈도를 참고한 조합</span></button><button class="mode-option" data-mode="hybrid"><strong>✧ 통계 + 무작위 혼합</strong><span>통계 가중 선택과 균등 무작위 선택을 50:50으로 섞음</span></button><button class="mode-option" data-mode="custom"><strong>⚙ 직접 설정</strong><span>포함·제외 번호를 직접 선택</span></button></div><button class="primary" style="width:100%;margin-top:15px" onclick="navigate('generator')">추천 설정 열기&nbsp; →</button></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">빠른 번호 추천</div><div class="panel-desc">완전 무작위·통계 참고·50:50 혼합 방식으로 조합을 만들어 보세요.</div></div><span class="badge green">생성 준비</span></div><div class="mode-grid"><button class="mode-option selected" data-mode="random"><strong>✦ 완전 무작위</strong><span>매번 새롭게 생성하는 기본 조합</span></button><button class="mode-option" data-mode="balanced"><strong>◈ 균형 조합</strong><span>홀짝·번호 구간·합계를 참고</span></button><button class="mode-option" data-mode="stats"><strong>▥ 통계 참고</strong><span>과거 출현 빈도를 참고한 조합</span></button><button class="mode-option" data-mode="hybrid"><strong>✧ 통계 + 무작위 혼합</strong><span>통계 가중 선택과 균등 무작위 선택을 50:50으로 섞음</span></button><button class="mode-option" data-mode="custom"><strong>⚙ 직접 설정</strong><span>포함·제외 번호를 직접 선택</span></button></div><button class="primary" style="width:100%;margin-top:15px" onclick="navigate('generator')">추천 설정 열기&nbsp; →</button></div>
       <div class="panel"><div class="panel-head"><div><div class="panel-title">최근 결과 미리보기</div><div class="panel-desc">최신 회차와 내 번호를 비교해 보세요.</div></div><button class="text-link" onclick="navigate('checker')">당첨 확인 →</button></div><div id="homeRecent" class="empty">당첨 데이터 확인 중입니다.</div></div>
     </div>
     <div class="footer-note">LUCKY 645는 번호 조합을 생성하고 과거 데이터를 시각화하는 참고용 도구입니다. 로또 추첨은 무작위이며 어떠한 추천 방식도 당첨을 보장하거나 실제 당첨 확률을 높이지 않습니다. 복권 구매는 법정 연령 및 관련 규정을 준수해 책임 있게 이용하세요.</div>
@@ -125,7 +126,7 @@
   <div class="footer-note">데이터 출처: <a href="https://www.dhlottery.co.kr/lt645/intro" target="_blank" rel="noopener">동행복권 로또6/45</a> 최신 결과 + <a href="https://github.com/visionary153/lotto-api" target="_blank" rel="noopener">누적 회차 공개 JSON</a>. 누적 자료는 동행복권 공개 회차 기록을 바탕으로 한 제3자 데이터 사본이며, 앱은 최신 회차를 공식 결과와 재대조합니다. 보조 출처: <a href="https://cashlogy.kr/lotto/excel" target="_blank" rel="noopener">Cashlogy CSV</a>.<br>LUCKY 645는 독립 운영되는 정보·조합 도구이며 동행복권과 제휴 또는 공식 관계가 없습니다.</div>
 </main>
 </div>
-<nav class="mobile-nav" id="mobileNav"><button class="active" data-page="home"><span>⌂</span>홈</button><button data-page="generator"><span>✦</span>추천</button><button data-page="stats"><span>▥</span>통계</button><button data-page="analytics"><span>⌁</span>분석실</button><button data-page="checker"><span>✓</span>당첨확인</button><button data-page="saved"><span>▣</span>보관함</button><button data-page="history"><span>◷</span>회차</button></nav>
+<nav class="mobile-nav" id="mobileNav" aria-label="주요 메뉴"><button class="active" data-page="home"><span>⌂</span>홈</button><button data-page="generator"><span>✦</span>추천</button><button data-page="stats"><span>▥</span>통계</button><button data-page="analytics"><span>⌁</span>분석실</button><button data-page="checker"><span>✓</span>당첨확인</button><button data-page="saved"><span>▣</span>보관함</button><button data-page="history"><span>◷</span>회차</button></nav>
 <div class="toast" id="toast"></div>
 <script defer src="/assets/app.js"></script>
 </body>
