@@ -46,7 +46,7 @@
   </section>
 
   <section class="page" id="page-generator">
-    <div class="split" style="margin-bottom:20px"><div><div class="eyebrow">NUMBER GENERATOR</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">나만의 번호 조합 만들기</h1><div class="panel-desc">원하는 방식을 고르면 1~45 사이의 중복 없는 번호 6개를 추천합니다.</div></div><span class="badge green">6 / 45</span></div>
+    <div class="split" style="margin-bottom:20px"><div><div class="eyebrow">NUMBER GENERATOR</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">나만의 번호 조합 만들기</h1><div class="panel-desc">원하는 방식을 고르면 1~45 사이의 중복 없는 번호 6개를 추천합니다. 생성한 조합은 전체 저장 버튼으로 한 번에 보관할 수 있습니다.</div></div><span class="badge green">6 / 45</span></div>
     <div class="grid-2">
       <div class="panel"><div class="panel-head"><div><div class="panel-title">① 추천 방식 선택</div><div class="panel-desc">각 방식은 조합을 고르는 기준만 다릅니다.</div></div></div><div class="mode-grid" id="generatorModes"><button class="mode-option selected" data-mode="random"><strong>✦ 완전 무작위</strong><span>모든 번호를 같은 기준으로 무작위 선택</span></button><button class="mode-option" data-mode="balanced"><strong>◈ 균형 조합</strong><span>홀짝·구간·합계를 참고하고 3연속 번호를 제한</span></button><button class="mode-option" data-mode="stats"><strong>▥ 통계 참고</strong><span>과거 출현 빈도를 참고해 후보 조합을 선택</span></button><button class="mode-option" data-mode="hybrid"><strong>✧ 통계 + 무작위 혼합</strong><span>50% 통계 가중 · 50% 균등 무작위 조합</span></button><button class="mode-option" data-mode="custom"><strong>⚙ 직접 설정</strong><span>포함할 번호와 제외할 번호를 지정</span></button><button class="mode-option" data-mode="coverage"><strong>◎ 번호 커버리지 분산</strong><span>이전에 저장한 조합까지 고려해 1~45 번호를 넓게 사용</span></button></div>
         <div style="height:1px;background:var(--line);margin:20px 0"></div>
@@ -54,7 +54,7 @@
         <div id="customArea" style="display:none;margin-top:20px"><div class="split" style="margin-bottom:9px"><div class="field"><label>포함할 번호 <span class="muted">(최대 5개)</span></label></div><span class="badge" id="includeCount">0 / 5</span></div><div class="number-grid" id="includeGrid"></div><div class="split" style="margin:16px 0 9px"><div class="field"><label>제외할 번호</label></div><span class="badge" id="excludeCount">0개 선택</span></div><div class="number-grid" id="excludeGrid"></div><p class="small-label" style="margin-top:9px">포함 번호와 제외 번호는 동시에 선택할 수 없습니다.</p></div>
         <button class="primary" id="generateBtn" style="width:100%;margin-top:20px">✦ 번호 조합 생성하기</button>
       </div>
-      <div class="panel"><div class="panel-head"><div><div class="panel-title">② 추천 결과</div><div class="panel-desc">마음에 드는 번호는 보관함에 저장하세요.</div></div><span class="badge" id="resultCount">0 조합</span></div><div id="results" class="empty">아직 생성된 조합이 없습니다.<br>왼쪽에서 방식을 선택하고 생성 버튼을 눌러주세요.</div><div class="notice" style="margin-top:15px"><strong>기억해 주세요.</strong> 통계 기반·혼합·균형 조합은 과거 데이터나 보기 좋은 분포를 참고하는 방식입니다. 모든 유효한 6개 번호 조합의 1등 당첨 확률은 동일합니다.</div></div>
+      <div class="panel"><div class="panel-head generator-result-head"><div><div class="panel-title">② 추천 결과</div><div class="panel-desc">개별 저장 또는 전체 저장을 사용할 수 있습니다.</div></div><div class="generator-result-actions"><span class="badge" id="resultCount">0 조합</span><button class="primary" id="saveAllResultsBtn" disabled>전체 저장 (0)</button></div></div><div id="generatedSummary" class="generator-summary empty">조합을 생성하면 중복 여부, 번호 사용 범위와 이번 조합의 1등 확률을 계산합니다.</div><div id="results" class="empty">아직 생성된 조합이 없습니다.<br>왼쪽에서 방식을 선택하고 생성 버튼을 눌러주세요.</div><div class="notice" style="margin-top:15px"><strong>기억해 주세요.</strong> 통계 기반·혼합·균형 조합은 과거 데이터나 보기 좋은 분포를 참고하는 방식입니다. 모든 유효한 6개 번호 조합의 1등 당첨 확률은 동일합니다.</div></div>
     </div>
   </section>
 
@@ -165,6 +165,6 @@
 </div>
 <nav class="mobile-nav" id="mobileNav" aria-label="주요 메뉴"><button class="active" data-page="home"><span>⌂</span>홈</button><button data-page="generator"><span>✦</span>추천</button><button data-page="stats"><span>▥</span>통계</button><button data-page="analytics"><span>⌁</span>분석실</button><button data-page="simulation"><span>◉</span>시뮬</button><button data-page="checker"><span>✓</span>당첨확인</button><button data-page="saved"><span>▣</span>보관함</button><button data-page="history"><span>◷</span>회차</button></nav>
 <div class="toast" id="toast"></div>
-<script defer src="/assets/app.js?v=20261119-simulation-studio-1"></script>
+<script defer src="/assets/app.js?v=20261119-predict-bulk-save-1"></script>
 </body>
 </html>
