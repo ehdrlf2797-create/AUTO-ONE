@@ -40,6 +40,8 @@ const CLOUD_SESSION_KEY = 'lucky645_cloud_session_v1';
 let cloudSession = loadCloudSession();
 let cloudApplying = false;
 let cloudSyncTimer = null;
+let cloudSyncPromise = null;
+let cloudSyncRequested = false;
 
 let draws = loadCachedDraws();
 let latest = draws.at(-1) || FALLBACK_DRAW;
@@ -1367,11 +1369,15 @@ function saveCloudSession(session) {
   try { if (cloudSession) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(cloudSession)); else localStorage.removeItem(CLOUD_SESSION_KEY); } catch (_) {}
   renderCloudAuth();
 }
+function cloudTombstonesStorageKey() {
+  const userId=cloudSession?.user?.id;
+  return userId ? CLOUD_TOMBSTONES_KEY+':'+userId : CLOUD_TOMBSTONES_KEY+':local';
+}
 function loadCloudTombstones() {
-  try { const rows=JSON.parse(localStorage.getItem(CLOUD_TOMBSTONES_KEY)||'[]'); return Array.isArray(rows)?rows:[]; } catch (_) { return []; }
+  try { const rows=JSON.parse(localStorage.getItem(cloudTombstonesStorageKey())||'[]'); return Array.isArray(rows)?rows:[]; } catch (_) { return []; }
 }
 function persistCloudTombstones(rows) {
-  try { localStorage.setItem(CLOUD_TOMBSTONES_KEY, JSON.stringify(rows.slice(-50000))); } catch (_) {}
+  try { localStorage.setItem(cloudTombstonesStorageKey(), JSON.stringify(rows.slice(-50000))); } catch (_) {}
 }
 function markCloudDeleted(category, recordKey) {
   const rows=loadCloudTombstones(), key=String(recordKey);
@@ -1487,7 +1493,7 @@ async function cloudUpsert(rows, token) {
   const payload=rows.map(row=>({user_id:cloudSession.user.id,category:row.category,record_key:row.record_key,payload:row.payload||{},deleted_at:row.deleted_at||null,updated_at:new Date().toISOString()}));
   await cloudRequest('/rest/v1/lucky645_sync_records?on_conflict=user_id,category,record_key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)},token);
 }
-async function syncCloudData() {
+async function performCloudSync() {
   if(!cloudSession?.user?.id) return;
   const message=$('cloudMessage');
   if(message)message.textContent='클라우드 데이터를 안전하게 병합하는 중입니다…';
@@ -1532,6 +1538,23 @@ async function syncCloudData() {
   const deletedRows=[...tombstoneMap.values()].map(row=>({category:row.category,record_key:row.record_key,payload:{},deleted_at:row.deleted_at}));
   await cloudUpsert([...activeRows,...deletedRows],token);
   if(message)message.textContent='동기화 완료: 저장 조합 '+saved.length+'개 · 확인 이력 '+savedCheckHistory.length+'건. 이 기기와 클라우드 데이터를 병합했습니다.';
+}
+async function syncCloudData() {
+  if(!cloudSession?.user?.id) return;
+  if(cloudSyncPromise) {
+    cloudSyncRequested=true;
+    return cloudSyncPromise;
+  }
+  cloudSyncPromise=performCloudSync();
+  try {
+    return await cloudSyncPromise;
+  } finally {
+    cloudSyncPromise=null;
+    if(cloudSyncRequested) {
+      cloudSyncRequested=false;
+      scheduleCloudSync();
+    }
+  }
 }
 function scheduleCloudSync() {
   if(cloudApplying||!cloudSession?.access_token)return;
