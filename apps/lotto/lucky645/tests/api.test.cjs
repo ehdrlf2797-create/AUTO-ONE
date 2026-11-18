@@ -66,3 +66,33 @@ test('history integrity rejects gaps and duplicate rounds', () => {
   assert.equal(isContinuousHistory([one, {...two, round:3}]), false);
   assert.equal(isContinuousHistory([one, one]), false);
 });
+
+test('validates calendar dates and still allows missing optional dates', () => {
+  const { normalizeDate } = require('../api/lotto.js').__test;
+  assert.equal(normalizeDate('20261114'), '2026-11-14');
+  assert.equal(normalizeDate('2026-11-14'), '2026-11-14');
+  assert.equal(normalizeDate('20260230'), null);
+  assert.equal(normalizeDate('2026-13-01'), null);
+  assert.equal(normalizeDate('not-a-date'), null);
+  assert.equal(normalizeDate(''), null);
+
+  assert.equal(normalizeDraw({...officialRound, ltRflYmd:'20260230'}), null);
+  assert.equal(normalizeDraw({...officialRound, ltRflYmd:''}).date, null);
+});
+
+test('does not disguise an invalid newest official row as an older valid round', () => {
+  const invalidNewest = {...officialRound, ltEpsd:1251, tm1WnNo:46};
+  assert.equal(extractOfficialLatest({data:{list:[officialRound, invalidNewest]}}), null);
+});
+
+test('negative optional prize, winner and sales values are discarded', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    rnk1WnAmt:-100,
+    rnk1WnNope:-1,
+    wholEpsdSumNtslAmt:-500
+  });
+  assert.equal(draw.ranks[0].prize, null);
+  assert.equal(draw.ranks[0].winners, null);
+  assert.equal(draw.totalSales, null);
+});
