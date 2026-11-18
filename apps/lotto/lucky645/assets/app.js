@@ -1708,6 +1708,7 @@ function markCloudDeleted(category, recordKey, metadata = null) {
       : null;
   const existing = rows.find(row=>row.category===category && row.record_key===key);
   if(existing) {
+    existing.deleted_at=new Date().toISOString();
     if(numbersKey) existing.numbers_key=numbersKey;
   } else {
     rows.push({category,record_key:key,deleted_at:new Date().toISOString(),...(numbersKey?{numbers_key:numbersKey}:{})});
@@ -1874,10 +1875,36 @@ function buildLocalCloudRows() {
   rows.push({category:'auto_check_state',record_key:'default',payload:autoCheckMeta});
   return rows;
 }
+async function fetchAllCloudRows(token) {
+  const pageSize=1000;
+  const maxRows=200000;
+  const base='/rest/v1/lucky645_sync_records?select=id,category,record_key,payload,deleted_at,updated_at&order=updated_at.asc,id.asc';
+  const rows=[];
+  for(let offset=0;offset<maxRows;offset+=pageSize) {
+    const page=await cloudRequest(base+`&limit=${pageSize}&offset=${offset}`,{method:'GET'},token);
+    if(!Array.isArray(page)) throw new Error('클라우드 데이터 응답 형식이 올바르지 않습니다.');
+    rows.push(...page);
+    if(page.length<pageSize) return rows;
+  }
+  throw new Error('클라우드 데이터가 한 번에 처리할 수 있는 최대 행 수를 초과했습니다. 고객지원에 문의해 주세요.');
+}
+
 async function cloudUpsert(rows, token) {
   if(!rows.length)return;
-  const payload=rows.map(row=>({user_id:cloudSession.user.id,category:row.category,record_key:row.record_key,payload:row.payload||{},deleted_at:row.deleted_at||null,updated_at:new Date().toISOString()}));
-  await cloudRequest('/rest/v1/lucky645_sync_records?on_conflict=user_id,category,record_key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)},token);
+  const batchSize=250;
+  const base='/rest/v1/lucky645_sync_records?on_conflict=user_id,category,record_key';
+  for(let index=0;index<rows.length;index+=batchSize) {
+    const batch=rows.slice(index,index+batchSize);
+    const payload=batch.map(row=>({
+      user_id:cloudSession.user.id,
+      category:row.category,
+      record_key:row.record_key,
+      payload:row.payload||{},
+      deleted_at:row.deleted_at||null,
+      updated_at:new Date().toISOString()
+    }));
+    await cloudRequest(base,{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)},token);
+  }
 }
 async function performCloudSync() {
   if(!cloudSession?.user?.id) return;
@@ -1885,7 +1912,7 @@ async function performCloudSync() {
   if(message)message.textContent='클라우드 데이터를 안전하게 병합하는 중입니다…';
   const token=await cloudAccessToken();
   if(!token)throw new Error('로그인 세션이 만료됐습니다. 다시 로그인해 주세요.');
-  const remote=await cloudRequest('/rest/v1/lucky645_sync_records?select=category,record_key,payload,deleted_at,updated_at&order=updated_at.asc',{method:'GET'},token);
+  const remote=await fetchAllCloudRows(token);
   const tombstoneMap=new Map(loadCloudTombstones().map(row=>[row.category+':'+row.record_key,row]));
   (remote||[]).filter(row=>row.deleted_at).forEach(row=>tombstoneMap.set(row.category+':'+row.record_key,{
     category:row.category,
