@@ -1077,7 +1077,7 @@ function renderResearchLab() {
     } else if (researchReport) {
       message.textContent = '마지막 연구 완료: '+formatSyncTime(researchReport.createdAt)+' · '+formatNumber(researchReport.drawCount)+'회 데이터 · 100개 전략 · '+formatNumber(researchReport.simulationCount)+'회 시뮬레이션. 다시 실행하면 결과를 새로 계산합니다.';
     } else {
-      message.textContent = '데이터 '+formatNumber(count)+'회가 준비되었습니다. 버튼을 누르면 ① 전체 회차 검증 ② 100개 전략 비교 ③ 몬테카를로 1,000,000회 순서로 실제 계산합니다. 각 단계의 진행률이 표시됩니다.';
+      message.textContent = '데이터 '+formatNumber(count)+'회가 준비되었습니다. 버튼을 누르면 ① 전체 회차 검증 ② 무작위 참가자 200명 생성 ③ 100개 전략 토너먼트 ④ 몬테카를로 1,000,000회 순서로 실제 계산합니다. 각 단계의 진행률이 표시됩니다.';
     }
   }
   renderResearchResults();
@@ -1137,7 +1137,7 @@ async function runResearchLab() {
   if ($('researchProgressWrap')) $('researchProgressWrap').style.display = 'block';
   if ($('researchProgressBar')) $('researchProgressBar').style.width = '0%';
   if ($('researchRunMessage')) $('researchRunMessage').textContent = '데이터 사전 검사 통과: '+formatNumber(validatedDraws.length)+'개 회차. 이제 100개 전략을 평가합니다.';
-  updateResearchProgress('1/4 전체 회차 검증 완료 · 토너먼트 준비', 0, 100, 0, 50);
+  updateResearchProgress('1/4 전체 회차 검증 완료 · 토너먼트 준비', 0, 100, 0, 10);
   const startedAt = Date.now();
 
   try {
