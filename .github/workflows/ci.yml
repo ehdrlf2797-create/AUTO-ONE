@@ -70,4 +70,4 @@ jobs:
         run: node --check apps/lotto/lucky645/assets/app.js
 
       - name: Run LUCKY 645 tests
-        run: node --test apps/lotto/lucky645/tests/api.test.cjs
+        run: node --test apps/lotto/lucky645/tests/*.test.cjs
