@@ -1846,6 +1846,27 @@ function normalizeCloudHistoryRecord(row, remoteSavedById, localSaved) {
   return item;
 }
 
+function deletedSavedNumberMap(tombstones) {
+  const deletions = new Map();
+  for (const row of Array.isArray(tombstones) ? tombstones : []) {
+    if (row?.category !== 'saved_combination' || typeof row.numbers_key !== 'string') continue;
+    const deletedAt = Date.parse(row.deleted_at || '');
+    if (!Number.isFinite(deletedAt)) continue;
+    deletions.set(row.numbers_key,Math.max(deletions.get(row.numbers_key)||0,deletedAt));
+  }
+  return deletions;
+}
+
+function isSavedCombinationDeleted(entry, deletions) {
+  if (!entry || !Array.isArray(entry.numbers) || !(deletions instanceof Map)) return false;
+  const key = sortNums(entry.numbers.map(Number)).join('-');
+  const deletedAt = deletions.get(key);
+  if (!deletedAt) return false;
+  const updatedAt = Date.parse(entry.syncUpdatedAt || '') || 0;
+  // A later explicit save is a new user action and supersedes an older deletion.
+  return updatedAt <= deletedAt;
+}
+
 function buildLocalCloudRows() {
   const rows=[];
   saved.forEach(item=>rows.push({category:'saved_combination',record_key:String(item.id),payload:item}));
@@ -1873,15 +1894,10 @@ async function performCloudSync() {
     ...(typeof row.payload?.numbers_key==='string'?{numbers_key:row.payload.numbers_key}:{})
   }));
   const deleted=new Set([...tombstoneMap.keys()]);
-  const deletedSavedNumbers=new Set([...tombstoneMap.values()]
-    .filter(row=>row.category==='saved_combination'&&typeof row.numbers_key==='string')
-    .map(row=>row.numbers_key));
+  const deletedSavedNumbers=deletedSavedNumberMap([...tombstoneMap.values()]);
   const remoteActive=(remote||[]).filter(row=>{
     if(row.deleted_at||deleted.has(row.category+':'+row.record_key)) return false;
-    if(row.category==='saved_combination'&&Array.isArray(row.payload?.numbers)){
-      const key=sortNums(row.payload.numbers.map(Number)).join('-');
-      if(deletedSavedNumbers.has(key)) return false;
-    }
+    if(row.category==='saved_combination'&&isSavedCombinationDeleted(row.payload,deletedSavedNumbers)) return false;
     return true;
   });
   const localSavedByNumbers=new Map(saved.map(item=>[item.numbers.join('-'),item]));
@@ -1903,7 +1919,7 @@ async function performCloudSync() {
     // 여러 기기에서 같은 번호가 각각 생성되었더라도 저장 조합은 한 개로 합칩니다.
     if(String(row.record_key)!==String(local.id)){
       tombstoneMap.set('saved_combination:'+String(row.record_key),{
-        category:'saved_combination',record_key:String(row.record_key),deleted_at:new Date().toISOString(),numbers_key:key
+        category:'saved_combination',record_key:String(row.record_key),deleted_at:new Date().toISOString()
       });
     }
   });
@@ -1933,7 +1949,7 @@ async function performCloudSync() {
     autoCheckMeta={...remoteState,lastRound:Math.min(remoteRound,newestKnownRound)};
   }
 
-  saved=saved.filter(item=>!deleted.has('saved_combination:'+String(item.id))&&!deletedSavedNumbers.has(item.numbers.join('-')));
+  saved=saved.filter(item=>!deleted.has('saved_combination:'+String(item.id))&&!isSavedCombinationDeleted(item,deletedSavedNumbers));
   savedCheckHistory=savedCheckHistory.filter(item=>!deleted.has('check_history:'+String(item.id||item.round+':'+item.savedId)));
   persistCloudTombstones([...tombstoneMap.values()]);
   cloudApplying=true;
@@ -1948,14 +1964,10 @@ async function performCloudSync() {
   if(savedBacktestResult) runSavedBacktest();
 
   const finalDeleted=new Set([...tombstoneMap.keys()]);
-  const finalDeletedSavedNumbers=new Set([...tombstoneMap.values()]
-    .filter(row=>row.category==='saved_combination'&&typeof row.numbers_key==='string')
-    .map(row=>row.numbers_key));
+  const finalDeletedSavedNumbers=deletedSavedNumberMap([...tombstoneMap.values()]);
   const activeRows=buildLocalCloudRows().filter(row=>{
     if(finalDeleted.has(row.category+':'+row.record_key)) return false;
-    if(row.category==='saved_combination'&&Array.isArray(row.payload?.numbers)){
-      return !finalDeletedSavedNumbers.has(sortNums(row.payload.numbers).join('-'));
-    }
+    if(row.category==='saved_combination'&&isSavedCombinationDeleted(row.payload,finalDeletedSavedNumbers)) return false;
     return true;
   });
   const deletedRows=[...tombstoneMap.values()].map(row=>({
