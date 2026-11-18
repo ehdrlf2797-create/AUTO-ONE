@@ -80,7 +80,7 @@ function normalizeSavedEntry(entry, index = 0) {
   return {
     id: String(entry.id || `restored-${index}`).slice(0, 100),
     numbers: sortNums(numbers),
-    mode: ['random','balanced','stats','hybrid','custom'].includes(entry.mode) ? entry.mode : 'random',
+    mode: ['random','balanced','stats','hybrid','custom','coverage'].includes(entry.mode) ? entry.mode : 'random',
     date: typeof entry.date === 'string' ? entry.date.slice(0, 32) : '',
     favorite: Boolean(entry.favorite)
   };
@@ -111,7 +111,7 @@ function normalizeSavedCheckRecord(item) {
     bonus: Number.isInteger(Number(item.bonus)) ? Number(item.bonus) : null,
     checkedAt: typeof item.checkedAt === 'string' ? item.checkedAt.slice(0,40) : '',
     source: typeof item.source === 'string' ? item.source.slice(0,40) : '확인',
-    mode: ['random','balanced','stats','hybrid','custom'].includes(item.mode) ? item.mode : 'random'
+    mode: ['random','balanced','stats','hybrid','custom','coverage'].includes(item.mode) ? item.mode : 'random'
   };
 }
 
@@ -957,6 +957,38 @@ function simulateCombinations(count, rng=Math.random) {
   return {attempts,totalSum,averageSum:totalSum/attempts,averageOdd:totalOdd/attempts,numberCounts,oddDistribution,sumBins};
 }
 
+function runPortfolioSimulation() {
+  try {
+    const result = simulatePortfolioStrategies(Number($('portfolioSimulationCount').value));
+    const random = result.random, coverage = result.coverage;
+    const pct = value => (value * 100).toFixed(2) + '%';
+    const ratio = 1 / result.jackpotProbability;
+    const output = $('portfolioSimulationOutput');
+    output.className = '';
+    output.innerHTML =
+      '<div class="analytics-result-grid">' +
+        '<div class="analytics-result-card"><span class="small-label">실험 횟수</span><strong>' + formatNumber(result.attempts) + '회</strong><span class="analytics-mini">매 실험 10개 조합씩 비교</span></div>' +
+        '<div class="analytics-result-card"><span class="small-label">무작위 평균 커버리지</span><strong>' + random.coverage.toFixed(2) + ' / 45</strong><span class="analytics-mini">번호가 한 번 이상 포함된 개수</span></div>' +
+        '<div class="analytics-result-card"><span class="small-label">분산형 평균 커버리지</span><strong>' + coverage.coverage.toFixed(2) + ' / 45</strong><span class="analytics-mini">45개 전체 포함을 목표로 설계</span></div>' +
+      '</div>' +
+      '<div class="table-wrap" style="margin-top:14px"><table class="analytics-table"><thead><tr><th>비교 지표</th><th>무작위 10조합</th><th>커버리지 분산 10조합</th></tr></thead><tbody>' +
+        '<tr><td>평균 번호 커버리지</td><td>' + random.coverage.toFixed(2) + ' / 45</td><td><strong>' + coverage.coverage.toFixed(2) + ' / 45</strong></td></tr>' +
+        '<tr><td>3개 이상 일치 조합 존재</td><td>' + pct(random.any3) + '</td><td>' + pct(coverage.any3) + '</td></tr>' +
+        '<tr><td>4개 이상 일치 조합 존재</td><td>' + pct(random.any4) + '</td><td>' + pct(coverage.any4) + '</td></tr>' +
+        '<tr><td>5개 이상 일치 조합 존재</td><td>' + pct(random.any5) + '</td><td>' + pct(coverage.any5) + '</td></tr>' +
+        '<tr><td>1등 정확 일치</td><td>이론상 ' + pct(result.jackpotProbability) + '</td><td>이론상 ' + pct(result.jackpotProbability) + '</td></tr>' +
+      '</tbody></table></div>' +
+      '<div class="notice" style="margin-top:14px"><strong>해석:</strong> 커버리지 분산은 45개 번호를 넓게 사용하는 방식입니다. 3~5개 일치율은 이번 실험에서 관측한 값이며 회차·표본에 따라 흔들립니다. 서로 다른 10개 조합의 1등 확률은 두 방식 모두 10 / 8,145,060, 즉 약 1 / ' + formatNumber(Math.round(ratio)) + '로 같습니다.</div>' +
+      '<div class="analytics-mini" style="margin-top:10px">각 실험은 새 당첨번호 6개를 균등 무작위로 추첨해 두 포트폴리오를 비교합니다. 과거 빈도나 미출현 번호를 미래 예측에 사용하지 않습니다.</div>';
+    toast(formatNumber(result.attempts) + '회 포트폴리오 실험을 완료했습니다.');
+    return result;
+  } catch (error) {
+    $('portfolioSimulationOutput').className = 'empty';
+    $('portfolioSimulationOutput').textContent = error.message;
+    return null;
+  }
+}
+
 function runAnalyticsSimulation() {
   try {
     const result=simulateCombinations(Number($('simulationCount').value));
@@ -1131,7 +1163,7 @@ async function importSavedBackup(file) {
 }
 
 function modeLabel(mode) {
-  return ({random:'완전 무작위',balanced:'균형 조합',stats:'통계 참고',hybrid:'통계 + 무작위 혼합',custom:'직접 설정'})[mode] || '번호 추천';
+  return ({random:'완전 무작위',balanced:'균형 조합',stats:'통계 참고',hybrid:'통계 + 무작위 혼합',custom:'직접 설정',coverage:'번호 커버리지 분산'})[mode] || '번호 추천';
 }
 
 function makeGrid(containerId, selected, onToggle, disabled = []) {
@@ -1253,6 +1285,118 @@ function createCombination(mode,level,providedStatsWeights=null) {
   return null;
 }
 
+function createCoveragePortfolio(quantity, existing = [], rng = randomUnit) {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) return [];
+  const exposure = Array(46).fill(0);
+  const seen = new Set();
+  for (const entry of Array.isArray(existing) ? existing : []) {
+    const numbers = Array.isArray(entry) ? entry : (Array.isArray(entry?.numbers) ? entry.numbers : []);
+    if (numbers.length !== 6 || new Set(numbers).size !== 6 ||
+        numbers.some(number => !Number.isInteger(number) || number < 1 || number > 45)) continue;
+    const sorted = sortNums(numbers);
+    seen.add(sorted.join('-'));
+    sorted.forEach(number => exposure[number]++);
+  }
+  const portfolio = [];
+  let attempts = 0;
+  while (portfolio.length < quantity && attempts < quantity * 500) {
+    attempts++;
+    const available = Array.from({length:45},(_,index)=>index+1);
+    const combo = [];
+    while (combo.length < 6) {
+      let lowestExposure = Infinity;
+      for (const number of available) lowestExposure = Math.min(lowestExposure, exposure[number]);
+      const leastUsed = available.filter(number => exposure[number] === lowestExposure);
+      const sample = Number(rng());
+      const safeSample = Number.isFinite(sample) ? Math.max(0,Math.min(0.999999999999,sample)) : 0;
+      const chosen = leastUsed[Math.floor(safeSample * leastUsed.length)];
+      combo.push(chosen);
+      available.splice(available.indexOf(chosen),1);
+    }
+    const sorted = sortNums(combo);
+    const key = sorted.join('-');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    portfolio.push(sorted);
+    sorted.forEach(number => exposure[number]++);
+  }
+  return portfolio;
+}
+
+function createRandomPortfolio(quantity, rng = randomUnit) {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) return [];
+  const portfolio = [];
+  const seen = new Set();
+  let attempts = 0;
+  while (portfolio.length < quantity && attempts < quantity * 500) {
+    attempts++;
+    const pool = Array.from({length:45},(_,index)=>index+1);
+    for (let index=0; index<6; index++) {
+      const sample = Number(rng());
+      const safeSample = Number.isFinite(sample) ? Math.max(0,Math.min(0.999999999999,sample)) : 0;
+      const swapIndex = index + Math.floor(safeSample * (45-index));
+      [pool[index],pool[swapIndex]] = [pool[swapIndex],pool[index]];
+    }
+    const combo = sortNums(pool.slice(0,6));
+    const key = combo.join('-');
+    if (!seen.has(key)) {
+      seen.add(key);
+      portfolio.push(combo);
+    }
+  }
+  return portfolio;
+}
+
+function evaluateTicketPortfolio(portfolio, drawNumbers) {
+  const covered = new Set();
+  const exposure = Array(46).fill(0);
+  let any3 = false, any4 = false, any5 = false, any6 = false;
+  for (const ticket of portfolio) {
+    let matches = 0;
+    for (const number of ticket) {
+      covered.add(number);
+      exposure[number]++;
+      if (drawNumbers.includes(number)) matches++;
+    }
+    if (matches >= 3) any3 = true;
+    if (matches >= 4) any4 = true;
+    if (matches >= 5) any5 = true;
+    if (matches === 6) any6 = true;
+  }
+  return {coverage:covered.size,maxExposure:Math.max(...exposure.slice(1)),any3,any4,any5,any6};
+}
+
+function simulatePortfolioStrategies(count, rng = randomUnit) {
+  const attempts = Number(count);
+  if (![1000,5000,10000].includes(attempts)) {
+    throw new Error('실험 횟수는 1,000 / 5,000 / 10,000 중 선택해 주세요.');
+  }
+  const ticketCount = 10;
+  const result = {
+    attempts,ticketCount,jackpotProbability:ticketCount/8145060,
+    random:{coverage:0,maxExposure:0,any3:0,any4:0,any5:0,any6:0},
+    coverage:{coverage:0,maxExposure:0,any3:0,any4:0,any5:0,any6:0}
+  };
+  for (let run=0; run<attempts; run++) {
+    const draw = createRandomPortfolio(1,rng)[0];
+    const randomPortfolio = createRandomPortfolio(ticketCount,rng);
+    const coveragePortfolio = createCoveragePortfolio(ticketCount,[],rng);
+    for (const [name,portfolio] of [['random',randomPortfolio],['coverage',coveragePortfolio]]) {
+      const score = evaluateTicketPortfolio(portfolio,draw);
+      result[name].coverage += score.coverage;
+      result[name].maxExposure += score.maxExposure;
+      result[name].any3 += score.any3 ? 1 : 0;
+      result[name].any4 += score.any4 ? 1 : 0;
+      result[name].any5 += score.any5 ? 1 : 0;
+      result[name].any6 += score.any6 ? 1 : 0;
+    }
+  }
+  for (const name of ['random','coverage']) {
+    for (const key of ['coverage','maxExposure','any3','any4','any5','any6']) result[name][key] /= attempts;
+  }
+  return result;
+}
+
 function renderGenerated() {
   $('resultCount').textContent = `${generated.length} 조합`;
   if (!generated.length) {
@@ -1274,14 +1418,18 @@ function generateNumbers() {
   if (['stats','hybrid'].includes(activeMode) && drawsForStatsWeighting().length===0) return toast('통계 자료를 아직 불러오지 못했습니다. 데이터 연결 후 다시 시도해 주세요.');
 
   const next=[];
-  const seen=new Set();
-  const statsWeights = ['stats','hybrid'].includes(activeMode) ? frequencyWeights(drawsForStatsWeighting()).weights : null;
-  const maxAttempts=quantity*30;
-  for (let attempt=0; attempt<maxAttempts && next.length<quantity; attempt++) {
-    const combo=createCombination(activeMode,level,statsWeights);
-    if (!combo) break;
-    const key=combo.join('-');
-    if (!seen.has(key)) { seen.add(key); next.push(combo); }
+  if (activeMode==='coverage') {
+    next.push(...createCoveragePortfolio(quantity,[...saved,...generated.map(numbers=>({numbers}))]));
+  } else {
+    const seen=new Set([...saved,...generated].map(entry=>Array.isArray(entry?.numbers)?sortNums(entry.numbers).join('-'):sortNums(entry).join('-')));
+    const statsWeights = ['stats','hybrid'].includes(activeMode) ? frequencyWeights(drawsForStatsWeighting()).weights : null;
+    const maxAttempts=quantity*30;
+    for (let attempt=0; attempt<maxAttempts && next.length<quantity; attempt++) {
+      const combo=createCombination(activeMode,level,statsWeights);
+      if (!combo) break;
+      const key=combo.join('-');
+      if (!seen.has(key)) { seen.add(key); next.push(combo); }
+    }
   }
   if (!next.length) {
     toast('현재 선택한 조건을 만족하는 조합을 만들지 못했습니다. 균형 강도를 낮추거나 포함·제외 번호를 조정해 주세요.');
@@ -1292,6 +1440,7 @@ function generateNumbers() {
   if (generated.length<quantity) toast(`${generated.length}개 조합을 만들었습니다. 조건을 만족하는 서로 다른 조합이 부족합니다.`);
   else if (activeMode==='stats') { const count=drawsForStatsWeighting().length; toast(`${count}회 데이터의 출현 빈도를 약하게 반영했습니다. 당첨 확률은 동일합니다.`); }
   else if (activeMode==='hybrid') { const count=drawsForStatsWeighting().length; toast(`${count}회 통계 참고 조합과 균등 무작위 조합을 50:50으로 혼합했습니다.`); }
+  else if (activeMode==='coverage') toast('기존 저장 조합까지 고려해 번호 사용량을 분산했습니다. 1등 확률은 조합 수가 같으면 동일합니다.');
 }
 
 function saveCombination(numbers,mode=activeMode) {
@@ -1580,6 +1729,7 @@ function bindEvents() {
   document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{statsPeriod=button.dataset.period;renderStats();}));
   document.querySelectorAll('[data-analytics-period]').forEach(button=>button.addEventListener('click',()=>{analyticsPeriod=button.dataset.analyticsPeriod;renderAnalytics();}));
   $('runSimulationBtn').addEventListener('click',runAnalyticsSimulation);
+  $('runPortfolioSimulationBtn').addEventListener('click',runPortfolioSimulation);
   $('exportAnalyticsBtn').addEventListener('click',exportAnalyticsCsv);
   $('startHybridBtn').addEventListener('click',()=>{
     activeMode='hybrid';
