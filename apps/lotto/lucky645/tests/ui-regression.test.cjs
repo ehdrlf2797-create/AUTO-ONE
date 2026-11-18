@@ -170,7 +170,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /data-page="research"/);
   assert.match(html, /id="runResearchBtn"/);
   assert.match(html, /100 전략 · 1,000,000회/);
-  assert.match(html, /\/assets\/research\.js\?v=20261119-research-run-feedback-1/);
+  assert.match(html, /\/assets\/research\.js\?v=20261119-research-lab-1/);
   assert.match(app, /runResearchLab/);
   assert.match(app, /RESEARCH_CANDIDATES_KEY/);
 });
