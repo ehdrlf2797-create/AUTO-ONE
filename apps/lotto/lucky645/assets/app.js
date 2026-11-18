@@ -1388,7 +1388,12 @@ async function cloudRequest(path, options={}, token=null) {
   const response=await fetch(SUPABASE_URL+path,{...options,headers:{...cloudHeaders(token),...(options.headers||{})}});
   const body=await response.text();
   let data=null; try{data=body?JSON.parse(body):null;}catch(_){data={message:body};}
-  if(!response.ok) throw new Error(data?.msg||data?.message||data?.error_description||data?.error||('HTTP '+response.status));
+  if(!response.ok) {
+    const error=new Error(data?.msg||data?.message||data?.error_description||data?.error||('HTTP '+response.status));
+    error.status=response.status;
+    error.code=data?.code||data?.error_code||null;
+    throw error;
+  }
   return data;
 }
 async function cloudAuth(path, body, token=null) {
@@ -1398,8 +1403,26 @@ async function cloudAccessToken() {
   if(!cloudSession?.access_token) return null;
   const expiry=Number(cloudSession.expires_at||0);
   if(expiry && expiry*1000>Date.now()+60000) return cloudSession.access_token;
-  if(!cloudSession.refresh_token) { saveCloudSession(null); return null; }
-  const refreshed=await cloudAuth('token?grant_type=refresh_token',{refresh_token:cloudSession.refresh_token});
+  if(!cloudSession.refresh_token) {
+    saveCloudSession(null);
+    return null;
+  }
+
+  let refreshed;
+  try {
+    refreshed=await cloudAuth('token?grant_type=refresh_token',{refresh_token:cloudSession.refresh_token});
+  } catch(error) {
+    const code=String(error?.code||'').toLowerCase();
+    const status=Number(error?.status||0);
+    const invalidSession=status===400||status===401||
+      ['invalid_grant','refresh_token_not_found','refresh_token_already_used','invalid_refresh_token'].includes(code);
+    if(invalidSession) {
+      saveCloudSession(null);
+      throw new Error('로그인 세션이 만료되었거나 취소되었습니다. 다시 로그인해 주세요.');
+    }
+    throw error;
+  }
+
   saveCloudSession({...refreshed,expires_at:Math.floor(Date.now()/1000)+Number(refreshed.expires_in||3600)});
   return cloudSession.access_token;
 }
