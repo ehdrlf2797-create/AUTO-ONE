@@ -32,6 +32,8 @@ const SAVED_KEY = 'lucky645_saved';
 const SYNC_KEY = 'lucky645_sync_meta_v1';
 const SAVED_CHECKS_KEY = 'lucky645_saved_check_history_v1';
 const SIMULATION_HISTORY_KEY = 'lucky645_simulation_history_v1';
+const RESEARCH_REPORT_KEY = 'lucky645_research_report_v1';
+const RESEARCH_CANDIDATES_KEY = 'lucky645_research_candidates_v1';
 const MAX_SIMULATION_HISTORY = 20;
 const AUTO_CHECK_KEY = 'lucky645_auto_check_meta_v1';
 const MAX_BACKUP_FILE_SIZE = 12 * 1024 * 1024;
@@ -72,6 +74,9 @@ let lastSimulation = null;
 let simulationProfiles = loadSimulationProfiles();
 let lastFrequencySimulation = null;
 let simulationGeneratedTickets = [];
+let researchReport = loadResearchReport();
+let researchCandidates = loadResearchCandidates();
+let researchRunning = false;
 let isRefreshing = false;
 
 const $ = id => document.getElementById(id);
@@ -876,6 +881,7 @@ async function refreshData(showToast = true) {
     renderLatest();
     renderStats();
     renderAnalytics();
+    renderResearchLab();
     renderHistory();
     renderHomeRecent();
     renderSaved();
@@ -933,13 +939,136 @@ function renderLatest() {
   $('statDrawCount').textContent = draws.length.toLocaleString();
 }
 
+
+function loadResearchReport() {
+  try {
+    const value = JSON.parse(localStorage.getItem(RESEARCH_REPORT_KEY) || 'null');
+    return value && value.version === 1 && Array.isArray(value.evaluation?.strategies) ? value : null;
+  } catch (_) { return null; }
+}
+
+function loadResearchCandidates() {
+  try {
+    const value = JSON.parse(localStorage.getItem(RESEARCH_CANDIDATES_KEY) || '[]');
+    return Array.isArray(value) ? value.filter(item => item && typeof item.id === 'string' && typeof item.label === 'string').slice(0,100) : [];
+  } catch (_) { return []; }
+}
+
+function persistResearchState() {
+  try {
+    if (researchReport) localStorage.setItem(RESEARCH_REPORT_KEY, JSON.stringify(researchReport));
+    localStorage.setItem(RESEARCH_CANDIDATES_KEY, JSON.stringify(researchCandidates));
+    return true;
+  } catch (_) {
+    toast('연구 결과 저장 공간이 부족합니다. 이전 연구 기록을 백업하거나 정리해 주세요.');
+    return false;
+  }
+}
+
+function renderResearchResults() {
+  const report = researchReport;
+  const strategyTarget = $('researchStrategyResults');
+  const monteTarget = $('researchMonteCarloResults');
+  if (!report) {
+    if (strategyTarget) strategyTarget.innerHTML = '<div class="empty">연구 실행 후 100개 전략의 성능 순위를 표시합니다.</div>';
+    if (monteTarget) monteTarget.innerHTML = '<div class="empty">몬테카를로 실험 결과가 여기에 표시됩니다.</div>';
+    if ($('researchStrategySummary')) $('researchStrategySummary').textContent = '아직 실행 전';
+    if ($('researchMonteCarloSummary')) $('researchMonteCarloSummary').textContent = '1,000,000회 대기';
+    return;
+  }
+  const evaluation = report.evaluation;
+  const rows = evaluation.strategies || [];
+  if ($('researchStrategySummary')) $('researchStrategySummary').textContent = rows.length+'개 전략 · 후보 '+evaluation.candidateCount+'개';
+  if (strategyTarget) {
+    strategyTarget.className = 'table-wrap research-table-wrap';
+    strategyTarget.innerHTML = '<table class="analytics-table research-table"><thead><tr><th>순위</th><th>전략</th><th>평균 일치</th><th>무작위 기준</th><th>차이</th><th>z 점수</th><th>판정</th></tr></thead><tbody>'+rows.map((item,index)=>'<tr><td>'+(index+1)+'</td><td>'+escapeHtml(item.label)+'</td><td>'+item.averageMatches.toFixed(4)+'</td><td>'+item.baselineAverage.toFixed(4)+'</td><td class="'+(item.delta>0?'research-positive':'muted')+'">'+(item.delta>0?'+':'')+item.delta.toFixed(4)+'</td><td>'+item.zScore.toFixed(2)+'</td><td>'+(item.adjustedSignificance?'<span class="badge green">후보 등록</span>':'<span class="badge">미검증</span>')+'</td></tr>').join('')+'</tbody></table><div class="analytics-legend">검증 구간 '+evaluation.testStartRound+'~'+evaluation.testEndRound+'회 ('+formatNumber(evaluation.testCount)+'회) · 학습 '+formatNumber(evaluation.trainingCount)+'회 · 후보 기준 z ≥ '+evaluation.thresholdZ.toFixed(1)+'</div>';
+  }
+  const monte = report.monteCarlo;
+  if ($('researchMonteCarloSummary')) $('researchMonteCarloSummary').textContent = formatNumber(monte.attempts)+'회 완료';
+  if (monteTarget) {
+    const labels = ['0개 일치','1개 일치','2개 일치','3개 이상'];
+    monteTarget.className = 'research-monte-results';
+    monteTarget.innerHTML = '<div class="research-result-kpis"><div><span>총 추첨</span><strong>'+formatNumber(monte.attempts)+'</strong></div><div><span>번호 선택 횟수</span><strong>'+formatNumber(monte.totalSelections)+'</strong></div><div><span>번호당 기대 횟수</span><strong>'+formatNumber(Math.round(monte.expectedPerNumber))+'</strong></div><div><span>분포 χ²</span><strong>'+monte.chiSquare.toFixed(2)+'</strong></div></div><div class="table-wrap"><table class="analytics-table"><thead><tr><th>기준 조합 일치</th><th>관측 횟수</th><th>이론 기대</th><th>차이</th></tr></thead><tbody>'+labels.map((label,index)=>'<tr><td>'+label+'</td><td>'+formatNumber(monte.groupedObserved[index])+'</td><td>'+formatNumber(Math.round(monte.groupedExpected[index]))+'</td><td>'+formatNumber(Math.round(monte.groupedObserved[index]-monte.groupedExpected[index]))+'</td></tr>').join('')+'</tbody></table></div><div class="analytics-legend">몬테카를로는 균등 무작위 추첨 분포를 확인하는 보정 실험입니다. 고정 조합의 1등 확률은 여전히 1 / 8,145,060입니다.</div>';
+  }
+}
+
+function renderResearchLab() {
+  const count = draws.length;
+  if ($('researchDrawCount')) $('researchDrawCount').textContent = formatNumber(count);
+  if ($('researchRoundRange')) $('researchRoundRange').textContent = count ? draws[0].round+'회 ~ '+draws.at(-1).round+'회' : '데이터 확인 대기';
+  if ($('researchCandidateCount')) $('researchCandidateCount').textContent = String(researchCandidates.length);
+  if ($('researchCandidateBadge')) $('researchCandidateBadge').textContent = researchCandidates.length+'개 후보';
+  if ($('researchDataStatus')) {
+    $('researchDataStatus').textContent = dataReady && count >= 150 ? '전체 연속 데이터 확인' : '데이터 검증 필요';
+    $('researchDataStatus').className = 'badge '+(dataReady && count >= 150 ? 'green' : 'yellow');
+  }
+  const button = $('runResearchBtn');
+  if (button) button.disabled = researchRunning || !dataReady || count < 150 || !window.Lucky645Research;
+  if ($('researchCandidateList')) {
+    $('researchCandidateList').innerHTML = researchCandidates.length
+      ? '<div class="table-wrap"><table class="analytics-table"><thead><tr><th>전략</th><th>검증 회차</th><th>평균 일치 차이</th><th>z 점수</th><th>등록 시각</th></tr></thead><tbody>'+researchCandidates.map(item=>'<tr><td>'+escapeHtml(item.label)+'</td><td>'+formatNumber(item.testCount)+'회</td><td>+'+Number(item.delta).toFixed(4)+'</td><td>'+Number(item.zScore).toFixed(2)+'</td><td>'+escapeHtml(formatSyncTime(item.createdAt))+'</td></tr>').join('')+'</tbody></table></div><div class="analytics-legend">후보는 연구 기록으로만 저장됩니다. 실제 추천 조합 생성이나 구매에는 자동 반영되지 않습니다.</div>'
+      : '<div class="empty">아직 등록된 후보가 없습니다. 유의미한 개선이 검증되지 않으면 0개로 유지됩니다.</div>';
+  }
+  renderResearchResults();
+}
+
+function updateResearchProgress(label, completed, total, stageOffset, stageScale) {
+  const percent = Math.min(100, Math.round(stageOffset + (total ? completed / total * stageScale : 0)));
+  if ($('researchProgressLabel')) $('researchProgressLabel').textContent = label;
+  if ($('researchProgressPct')) $('researchProgressPct').textContent = percent+'%';
+  if ($('researchProgressBar')) $('researchProgressBar').style.width = percent+'%';
+}
+
+async function runResearchLab() {
+  if (researchRunning) return;
+  if (!dataReady || draws.length < 150) return toast('전체 회차의 연속성 검증을 완료한 뒤 실행해 주세요.');
+  if (!window.Lucky645Research) return toast('연구 엔진을 불러오지 못했습니다. 페이지를 새로고침해 주세요.');
+  researchRunning = true;
+  $('runResearchBtn').disabled = true;
+  $('runResearchBtn').textContent = '연구 실행 중…';
+  $('researchProgressWrap').style.display = 'block';
+  $('researchRunMessage').textContent = '전체 회차를 시간순으로 분리하고 100개 전략을 검증합니다.';
+  updateResearchProgress('100개 전략 평가 준비', 0, 100, 0, 50);
+  try {
+    const report = await window.Lucky645Research.runStudy(draws, { strategyCount: 100, simulations: 1000000 }, progress => {
+      if (progress.stage === 'strategies') {
+        updateResearchProgress('전략 평가 '+progress.completed+' / '+progress.total, progress.completed, progress.total, 0, 50);
+      } else {
+        updateResearchProgress('몬테카를로 '+formatNumber(progress.completed)+' / '+formatNumber(progress.total), progress.completed, progress.total, 50, 50);
+      }
+    });
+    researchReport = report;
+    const existing = new Set(researchCandidates.map(item=>item.id));
+    const newCandidates = report.evaluation.strategies.filter(item=>item.adjustedSignificance && !existing.has(item.id));
+    const createdAt = new Date().toISOString();
+    newCandidates.forEach(item=>researchCandidates.unshift({
+      id:item.id, label:item.label, family:item.family, lookback:item.lookback,
+      testCount:item.testCount, delta:item.delta, zScore:item.zScore, createdAt
+    }));
+    researchCandidates = researchCandidates.slice(0,100);
+    persistResearchState();
+    renderResearchLab();
+    updateResearchProgress('연구 완료', 1, 1, 100, 0);
+    $('researchRunMessage').textContent = '연구 완료: 전체 '+formatNumber(report.drawCount)+'회, 전략 '+report.strategyCount+'개, 몬테카를로 '+formatNumber(report.simulationCount)+'회. 새 후보 '+newCandidates.length+'개를 등록했습니다. '+(newCandidates.length?'등록 후보는 별도 검토가 필요합니다.':'통계적으로 검증된 개선 후보는 없습니다.');
+    toast('LUCKY 645 연구 완료 · 후보 '+newCandidates.length+'개');
+  } catch (error) {
+    $('researchRunMessage').textContent = '연구 실행 실패: '+error.message;
+    toast('연구 실행 실패: '+error.message);
+  } finally {
+    researchRunning = false;
+    $('runResearchBtn').textContent = '⚗ 전체 연구 다시 실행';
+    renderResearchLab();
+  }
+}
+
 function navigate(page) {
   document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===`page-${page}`));
   document.querySelectorAll('[data-page]').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
-  const labels = {home:'데이터와 무작위 조합으로 만드는 나만의 번호',generator:'원하는 방식으로 로또 번호 조합 생성',stats:'역대 당첨번호 통계와 숫자 분포 분석',analytics:'전체 회차 기반 고급 통계와 번호 패턴 분석',simulation:'무작위 실험으로 번호별 빈도 그래프와 조합 후보 확인',checker:'저장한 조합 및 직접 입력 번호 당첨 확인',saved:'내가 보관한 번호 조합 관리',history:'회차별 로또 6/45 당첨 결과'};
+  const labels = {home:'데이터와 무작위 조합으로 만드는 나만의 번호',generator:'원하는 방식으로 로또 번호 조합 생성',stats:'역대 당첨번호 통계와 숫자 분포 분석',analytics:'전체 회차 기반 고급 통계와 번호 패턴 분석',simulation:'무작위 실험으로 번호별 빈도 그래프와 조합 후보 확인',research:'100개 전략 비교와 백만 회 몬테카를로 검증',checker:'저장한 조합 및 직접 입력 번호 당첨 확인',saved:'내가 보관한 번호 조합 관리',history:'회차별 로또 6/45 당첨 결과'};
   $('pageSubtitle').textContent = labels[page] || labels.home;
   if (page === 'analytics') renderAnalytics();
   if (page === 'simulation') renderSimulationPage();
+  if (page === 'research') renderResearchLab();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 window.navigate = navigate;
@@ -2693,6 +2822,7 @@ function bindEvents() {
   document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{statsPeriod=button.dataset.period;renderStats();}));
   document.querySelectorAll('[data-analytics-period]').forEach(button=>button.addEventListener('click',()=>{analyticsPeriod=button.dataset.analyticsPeriod;renderAnalytics();}));
   $('runSimulationBtn').addEventListener('click',runAnalyticsSimulation);
+  $('runResearchBtn').addEventListener('click',runResearchLab);
   $('runPortfolioSimulationBtn').addEventListener('click',runPortfolioSimulation);
   $('runSimulationStudioBtn').addEventListener('click',runSimulationStudio);
   $('saveSimulationResultBtn').addEventListener('click',saveCurrentSimulationResult);
@@ -2774,6 +2904,7 @@ function init() {
   renderStats();
   renderAnalytics();
   renderSimulationPage();
+  renderResearchLab();
   renderHistory();
   renderHomeRecent();
   renderSaved();
