@@ -6,14 +6,15 @@ on:
     branches:
       - main
       - "phase0/**"
+      - "feature/**"
 
 permissions:
   contents: read
 
 jobs:
   python-quality:
-    name: Python ${gh} matrix.python-version }} / ${gh} matrix.os }}
-    runs-on: ${gh} matrix.os }}
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +35,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: ${gh} matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install project
@@ -53,3 +54,21 @@ jobs:
 
       - name: Check formatting
         run: python -m ruff format --check .
+
+  lucky645-api:
+    name: LUCKY 645 API tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Check API syntax
+        run: node --check apps/lotto/lucky645/api/lotto.js
+
+      - name: Run LUCKY 645 tests
+        run: node --test apps/lotto/lucky645/tests/api.test.cjs
