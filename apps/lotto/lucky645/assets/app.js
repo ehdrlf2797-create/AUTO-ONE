@@ -976,7 +976,7 @@ function runPortfolioSimulation() {
         '<tr><td>3개 이상 일치 조합 존재</td><td>' + pct(random.any3) + '</td><td>' + pct(coverage.any3) + '</td></tr>' +
         '<tr><td>4개 이상 일치 조합 존재</td><td>' + pct(random.any4) + '</td><td>' + pct(coverage.any4) + '</td></tr>' +
         '<tr><td>5개 이상 일치 조합 존재</td><td>' + pct(random.any5) + '</td><td>' + pct(coverage.any5) + '</td></tr>' +
-        '<tr><td>1등 정확 일치</td><td>이론상 ' + pct(result.jackpotProbability) + '</td><td>이론상 ' + pct(result.jackpotProbability) + '</td></tr>' +
+        '<tr><td>1등 정확 일치</td><td>약 1 / ' + formatNumber(Math.round(ratio)) + '</td><td>약 1 / ' + formatNumber(Math.round(ratio)) + '</td></tr>' +
       '</tbody></table></div>' +
       '<div class="notice" style="margin-top:14px"><strong>해석:</strong> 커버리지 분산은 45개 번호를 넓게 사용하는 방식입니다. 3~5개 일치율은 이번 실험에서 관측한 값이며 회차·표본에 따라 흔들립니다. 서로 다른 10개 조합의 1등 확률은 두 방식 모두 10 / 8,145,060, 즉 약 1 / ' + formatNumber(Math.round(ratio)) + '로 같습니다.</div>' +
       '<div class="analytics-mini" style="margin-top:10px">각 실험은 새 당첨번호 6개를 균등 무작위로 추첨해 두 포트폴리오를 비교합니다. 과거 빈도나 미출현 번호를 미래 예측에 사용하지 않습니다.</div>';
