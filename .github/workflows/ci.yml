@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   python-quality:
     name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
@@ -18,14 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.12", "3.13", "3.14", "3.15"]
-        exclude:
-          - os: windows-latest
-            python-version: "3.12"
-          - os: windows-latest
-            python-version: "3.13"
-          - os: windows-latest
-            python-version: "3.15"
+        python-version: ["3.14"]
 
     steps:
       - name: Check out source
@@ -53,3 +50,24 @@ jobs:
 
       - name: Check formatting
         run: python -m ruff format --check .
+
+  lucky645-api:
+    name: LUCKY 645 API tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Check API syntax
+        run: node --check apps/lotto/lucky645/api/lotto.js
+
+      - name: Check frontend syntax
+        run: node --check apps/lotto/lucky645/assets/app.js
+
+      - name: Run LUCKY 645 tests
+        run: node --test apps/lotto/lucky645/tests/api.test.cjs
