@@ -1408,15 +1408,30 @@ async function cloudAccessToken() {
     return null;
   }
 
+  const attemptedRefreshToken=cloudSession.refresh_token;
   let refreshed;
   try {
-    refreshed=await cloudAuth('token?grant_type=refresh_token',{refresh_token:cloudSession.refresh_token});
+    refreshed=await cloudAuth('token?grant_type=refresh_token',{refresh_token:attemptedRefreshToken});
   } catch(error) {
     const code=String(error?.code||'').toLowerCase();
     const status=Number(error?.status||0);
     const invalidSession=status===400||status===401||
       ['invalid_grant','refresh_token_not_found','refresh_token_already_used','invalid_refresh_token'].includes(code);
     if(invalidSession) {
+      // 다른 동기화 요청이나 브라우저 탭이 먼저 토큰을 회전했을 수 있습니다.
+      // 실패한 요청의 오래된 토큰이 현재 세션과 다르면 새 세션을 지우지 않습니다.
+      let storedSession=null;
+      try { storedSession=JSON.parse(localStorage.getItem(CLOUD_SESSION_KEY)||'null'); } catch (_) {}
+      const currentSession=cloudSession?.refresh_token!==attemptedRefreshToken
+        ? cloudSession
+        : storedSession?.refresh_token!==attemptedRefreshToken ? storedSession : null;
+      if(currentSession?.access_token && currentSession?.refresh_token) {
+        if(currentSession!==cloudSession) {
+          cloudSession=currentSession;
+          renderCloudAuth();
+        }
+        return cloudSession.access_token;
+      }
       saveCloudSession(null);
       throw new Error('로그인 세션이 만료되었거나 취소되었습니다. 다시 로그인해 주세요.');
     }
