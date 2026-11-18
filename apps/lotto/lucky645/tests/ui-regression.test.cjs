@@ -155,7 +155,7 @@ test('generator page supports one-click bulk save and displays deduplicated odds
   assert.match(html, /id="generatedSummary"/);
   assert.match(html, /id="results"/);
   assert.match(app, /function saveAllGenerated\(\)/);
-  assert.match(app, /buildBulkSavedEntries\(generated,saved,activeMode\)/);
+  assert.match(app, /buildBulkSavedEntries\(generated,saved,generatedMode\)/);
   assert.match(app, /function summarizeGeneratedTickets\(tickets, savedEntries = \[\]\)/);
   assert.match(app, /TOTAL_LOTTO_COMBINATIONS = 8145060/);
   assert.match(app, /if\(!persistSaved\(\[\.\.\.prepared\.entries,\.\.\.saved\]\)\) return false/);
