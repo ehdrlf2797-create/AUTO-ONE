@@ -247,24 +247,78 @@ function autoCheckLatestDraw() {
   }
 }
 
+function buildSavedCheckReportStats(savedEntries, historyRows) {
+  const statsBySavedId = new Map();
+  const recentHistory = [];
+  let top = 0, low = 0, last = null;
+  const compareRecent = (a,b) =>
+    Number(b.round)-Number(a.round) ||
+    String(b.checkedAt||'').localeCompare(String(a.checkedAt||''));
+
+  for (const row of Array.isArray(historyRows) ? historyRows : []) {
+    if (['1등','2등','3등'].includes(row.rank)) top++;
+    else if (row.rank === '4등' || row.rank === '5등') low++;
+    if (!last || Number(row.round) > Number(last.round)) last = row;
+
+    const savedId = String(row.savedId || '');
+    if (savedId) {
+      let stats = statsBySavedId.get(savedId);
+      if (!stats) {
+        stats = {checks:0,wins:0,top3:0,totalMatches:0};
+        statsBySavedId.set(savedId,stats);
+      }
+      stats.checks++;
+      if (row.rank !== '낙첨') stats.wins++;
+      if (row.rank === '1등' || row.rank === '2등' || row.rank === '3등') stats.top3++;
+      stats.totalMatches += Number(row.matches) || 0;
+    }
+
+    // Keep only the newest 30 rows instead of sorting the entire history array.
+    let left = 0, right = recentHistory.length;
+    while (left < right) {
+      const middle = (left + right) >>> 1;
+      if (compareRecent(row,recentHistory[middle]) < 0) right = middle;
+      else left = middle + 1;
+    }
+    if (left < 30) {
+      recentHistory.splice(left,0,row);
+      if (recentHistory.length > 30) recentHistory.pop();
+    } else if (recentHistory.length < 30) {
+      recentHistory.push(row);
+    }
+  }
+
+  const rows = (Array.isArray(savedEntries) ? savedEntries : []).map(entry => {
+    const stats = statsBySavedId.get(String(entry.id)) || {checks:0,wins:0,top3:0,totalMatches:0};
+    return {
+      entry,
+      checks:stats.checks,
+      wins:stats.wins,
+      top3:stats.top3,
+      avg:stats.checks ? stats.totalMatches/stats.checks : 0
+    };
+  }).sort((a,b)=>b.top3-a.top3 || b.wins-a.wins || b.avg-a.avg || b.checks-a.checks);
+
+  return {
+    total:Array.isArray(historyRows)?historyRows.length:0,
+    top,low,last,recentHistory,rows
+  };
+}
+
 function renderSavedReports() {
-  const total = savedCheckHistory.length;
-  const top = savedCheckHistory.filter(row=>['1등','2등','3등'].includes(row.rank)).length;
-  const low = savedCheckHistory.filter(row=>['4등','5등'].includes(row.rank)).length;
-  const last = savedCheckHistory.slice().sort((a,b)=>b.round-a.round)[0];
+  const report = buildSavedCheckReportStats(saved,savedCheckHistory);
+  const {total,top,low,last, recentHistory:recentRows, rows:performanceRows} = report;
   const kpis = $('savedCheckKpis');
   if (kpis) kpis.innerHTML = `<div class="saved-insight-card"><span>누적 조합 확인</span><strong>${formatNumber(total)}건</strong></div><div class="saved-insight-card"><span>1~3등 결과</span><strong>${formatNumber(top)}건</strong></div><div class="saved-insight-card"><span>4~5등 결과</span><strong>${formatNumber(low)}건</strong></div><div class="saved-insight-card"><span>최근 확인 회차</span><strong>${last ? `${last.round}회` : '-'}</strong></div>`;
   const status = $('savedCheckStatus');
   if (status) status.innerHTML = `자동 확인 기준: <strong>${autoCheckMeta.lastRound ? `${autoCheckMeta.lastRound}회` : '아직 설정되지 않음'}</strong> · 마지막 확인: ${escapeHtml(formatSyncTime(autoCheckMeta.lastCheckedAt))} · ${escapeHtml(autoCheckMeta.lastStatus || '대기')}<br><span class="analytics-mini">공식 최신 회차가 업데이트되고 페이지에서 데이터 확인이 완료될 때 실행됩니다. 브라우저를 닫은 동안에는 확인되지 않습니다.</span>`;
   const history = $('savedCheckHistory');
   if (history) {
-    const rows = savedCheckHistory.slice().sort((a,b)=>b.round-a.round || String(b.checkedAt).localeCompare(String(a.checkedAt))).slice(0,30);
-    history.innerHTML = rows.length ? `<div class="table-wrap"><table class="saved-history-table"><thead><tr><th>회차</th><th>내 조합</th><th>일치</th><th>보너스</th><th>결과</th><th>확인 방식</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row.round}회</td><td>${row.numbers.join(', ')}</td><td>${row.matches}개</td><td>${row.bonusMatch?'일치':'-'}</td><td><strong>${row.rank}</strong></td><td>${escapeHtml(row.source)}</td></tr>`).join('')}</tbody></table></div><div class="analytics-mini" style="margin-top:8px">최근 30건 표시 · 전체 이력 ${formatNumber(total)}건</div>` : '<div class="empty">아직 당첨 확인 이력이 없습니다. 최신 공식 회차 확인 또는 직접 비교를 실행해 주세요.</div>';
+    history.innerHTML = recentRows.length ? `<div class="table-wrap"><table class="saved-history-table"><thead><tr><th>회차</th><th>내 조합</th><th>일치</th><th>보너스</th><th>결과</th><th>확인 방식</th></tr></thead><tbody>${recentRows.map(row=>`<tr><td>${row.round}회</td><td>${row.numbers.join(', ')}</td><td>${row.matches}개</td><td>${row.bonusMatch?'일치':'-'}</td><td><strong>${row.rank}</strong></td><td>${escapeHtml(row.source)}</td></tr>`).join('')}</tbody></table></div><div class="analytics-mini" style="margin-top:8px">최근 30건 표시 · 전체 이력 ${formatNumber(total)}건</div>` : '<div class="empty">아직 당첨 확인 이력이 없습니다. 최신 공식 회차 확인 또는 직접 비교를 실행해 주세요.</div>';
   }
   const perf = $('savedPerformance');
   if (perf) {
-    const rows = saved.map(entry=>{ const checks=savedCheckHistory.filter(row=>row.savedId===entry.id); const wins=checks.filter(row=>row.rank!=='낙첨').length; const top3=checks.filter(row=>['1등','2등','3등'].includes(row.rank)).length; const avg=checks.length?checks.reduce((sum,row)=>sum+row.matches,0)/checks.length:0; return {entry,checks:checks.length,wins,top3,avg}; }).sort((a,b)=>b.top3-a.top3 || b.wins-a.wins || b.avg-a.avg || b.checks-a.checks);
-    perf.innerHTML = rows.length ? `<div class="table-wrap"><table class="saved-history-table"><thead><tr><th>순위</th><th>저장 조합</th><th>비교 횟수</th><th>당첨 결과</th><th>1~3등</th><th>평균 일치</th></tr></thead><tbody>${rows.map((row,i)=>`<tr><td>${i+1}</td><td>${row.entry.numbers.join(', ')}</td><td>${row.checks}</td><td>${row.wins}</td><td>${row.top3}</td><td>${row.avg.toFixed(2)}개</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">저장한 조합이 없습니다.</div>';
+    perf.innerHTML = performanceRows.length ? `<div class="table-wrap"><table class="saved-history-table"><thead><tr><th>순위</th><th>저장 조합</th><th>비교 횟수</th><th>당첨 결과</th><th>1~3등</th><th>평균 일치</th></tr></thead><tbody>${performanceRows.map((row,i)=>`<tr><td>${i+1}</td><td>${row.entry.numbers.join(', ')}</td><td>${row.checks}</td><td>${row.wins}</td><td>${row.top3}</td><td>${row.avg.toFixed(2)}개</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">저장한 조합이 없습니다.</div>';
   }
 }
 
@@ -325,29 +379,45 @@ function runSavedBacktest() {
   const byPeriod = {};
   const byMode = {};
   let gross = 0, knownPrizeCount = 0, checks = 0;
+  const preparedDraws = selectedDraws.map(draw => {
+    const prizeByRank = new Map((draw.ranks || []).map(item=>[Number(item.rank),item.prize]));
+    return {
+      numberSet:new Set(draw.numbers),
+      bonus:draw.bonus,
+      prizeByRank,
+      periodKey:period === 'month'
+        ? (draw.date ? draw.date.slice(0,7) : '날짜 없음')
+        : (draw.date ? draw.date.slice(0,4) : '날짜 없음')
+    };
+  });
 
   for (const entry of saved) {
     const mode = entry.mode || 'random';
     if (!byMode[mode]) byMode[mode] = {checks:0,win:0,top3:0};
-    for (const draw of selectedDraws) {
-      const result = compareNumbers(entry.numbers, draw);
-      const rank = result.rank;
+    for (const prepared of preparedDraws) {
+      let matches = 0;
+      let bonusMatch = false;
+      for (const number of entry.numbers) {
+        if (prepared.numberSet.has(number)) matches++;
+        if (number === prepared.bonus) bonusMatch = true;
+      }
+      const rank = rankName(matches,bonusMatch);
       rankCounts[rank] = (rankCounts[rank] || 0) + 1;
       checks++;
       byMode[mode].checks++;
-      if (rank !== '낙첨') byMode[mode].win++;
-      if (['1등','2등','3등'].includes(rank)) byMode[mode].top3++;
+      const isWin = rank !== '낙첨';
+      const isTop3 = rank === '1등' || rank === '2등' || rank === '3등';
+      if (isWin) byMode[mode].win++;
+      if (isTop3) byMode[mode].top3++;
 
-      const key = period === 'month'
-        ? (draw.date ? draw.date.slice(0,7) : '날짜 없음')
-        : (draw.date ? draw.date.slice(0,4) : '날짜 없음');
+      const key = prepared.periodKey;
       if (!byPeriod[key]) byPeriod[key] = {checks:0,win:0,top3:0};
       byPeriod[key].checks++;
-      if (rank !== '낙첨') byPeriod[key].win++;
-      if (['1등','2등','3등'].includes(rank)) byPeriod[key].top3++;
+      if (isWin) byPeriod[key].win++;
+      if (isTop3) byPeriod[key].top3++;
 
-      if (rank !== '낙첨') {
-        const prize = draw.ranks?.find(item => Number(item.rank) === Number(rank[0]))?.prize;
+      if (isWin) {
+        const prize = prepared.prizeByRank.get(Number(rank[0]));
         if (Number.isFinite(prize)) {
           gross += prize;
           knownPrizeCount++;
@@ -893,19 +963,45 @@ function barRow(label,value,total,kind) {
 }
 
 function drawsForAnalytics() {
-  const ordered = [...draws].sort((a,b)=>a.round-b.round);
-  if (analyticsPeriod === 'all') return ordered;
+  // Draws are normalized and kept in ascending round order by mergeDraws().
+  if (analyticsPeriod === 'all') return draws;
   const count = Number(analyticsPeriod);
-  return Number.isInteger(count) && count > 0 ? ordered.slice(-count) : ordered;
+  return Number.isInteger(count) && count > 0 ? draws.slice(-count) : draws;
 }
 
-function calculateAnalytics(input) {
-  const sample = (Array.isArray(input) ? input : [])
+function prepareAnalyticsSample(input) {
+  const source = Array.isArray(input) ? input : [];
+  let previousRound = 0;
+  let isCanonical = true;
+  for (const draw of source) {
+    if (!draw || !Number.isInteger(draw.round) || draw.round <= previousRound ||
+        !Array.isArray(draw.numbers) || draw.numbers.length !== 6) {
+      isCanonical = false;
+      break;
+    }
+    previousRound = draw.round;
+    for (let index=0; index<6; index++) {
+      const number = draw.numbers[index];
+      if (!Number.isInteger(number) || number < 1 || number > 45 ||
+          (index > 0 && number <= draw.numbers[index-1])) {
+        isCanonical = false;
+        break;
+      }
+    }
+    if (!isCanonical) break;
+  }
+  if (isCanonical) return source;
+
+  return source
     .filter(draw => draw && Number.isInteger(Number(draw.round)) && Array.isArray(draw.numbers)
       && draw.numbers.length === 6 && new Set(draw.numbers).size === 6
       && draw.numbers.every(n => Number.isInteger(n) && n >= 1 && n <= 45))
     .map(draw => ({...draw, round:Number(draw.round), numbers:sortNums(draw.numbers)}))
     .sort((a,b)=>a.round-b.round);
+}
+
+function calculateAnalytics(input) {
+  const sample = prepareAnalyticsSample(input);
   const counts = Array(46).fill(0);
   const lastSeen = Array(46).fill(null);
   const firstSeen = Array(46).fill(null);
@@ -1839,7 +1935,10 @@ function normalizeCloudHistoryRecord(row, remoteSavedById, localSaved) {
 
   const mapped = remoteSavedById.get(String(item.savedId));
   if (mapped) item.savedId = mapped;
-  const local = localSaved.find(entry => entry.numbers.join('-') === item.numbers.join('-'));
+  const numberKey = item.numbers.join('-');
+  const local = localSaved instanceof Map
+    ? localSaved.get(numberKey)
+    : localSaved.find(entry => entry.numbers.join('-') === numberKey);
   if (local) item.savedId = local.id;
   item.id = item.savedId
     ? `${item.round}:${item.savedId}`
@@ -1953,7 +2052,7 @@ async function performCloudSync() {
 
   const historyKeys=new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
   remoteActive.filter(row=>row.category==='check_history').forEach(row=>{
-    const item=normalizeCloudHistoryRecord(row,remoteSavedById,saved);
+    const item=normalizeCloudHistoryRecord(row,remoteSavedById,localSavedByNumbers);
     if(!item)return;
     const key=`${Number(item.round)}:${String(item.savedId || item.id)}`;
     if(!historyKeys.has(key)){
