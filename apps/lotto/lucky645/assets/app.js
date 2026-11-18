@@ -77,6 +77,8 @@ let simulationGeneratedTickets = [];
 let researchReport = loadResearchReport();
 let researchCandidates = loadResearchCandidates();
 let researchRunning = false;
+let researchLastRunMessage = '';
+let researchLastRunTone = 'normal';
 let isRefreshing = false;
 
 const $ = id => document.getElementById(id);
@@ -1020,7 +1022,11 @@ function renderResearchLab() {
   const message = $('researchRunMessage');
   if (message && !researchRunning) {
     message.className = 'notice research-run-message';
-    if (!engineReady) {
+    if (researchLastRunMessage) {
+      message.textContent = researchLastRunMessage;
+      if (researchLastRunTone === 'error') message.classList.add('research-message-error');
+      if (researchLastRunTone === 'warning') message.classList.add('research-message-warning');
+    } else if (!engineReady) {
       message.textContent = '연구 엔진 스크립트를 불러오지 못했습니다. 페이지를 새로고침한 뒤에도 계속되면 관리자 확인이 필요합니다.';
       message.classList.add('research-message-error');
     } else if (count < 150) {
@@ -1050,6 +1056,8 @@ async function runResearchLab() {
   const message = $('researchRunMessage');
   const button = $('runResearchBtn');
   const showMessage = (text, tone = 'normal') => {
+    researchLastRunMessage = text;
+    researchLastRunTone = tone;
     if (message) {
       message.textContent = text;
       message.className = 'notice research-run-message'+(tone === 'error' ? ' research-message-error' : tone === 'warning' ? ' research-message-warning' : '');
