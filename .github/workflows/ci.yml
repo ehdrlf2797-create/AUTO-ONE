@@ -70,5 +70,8 @@ jobs:
       - name: Check API syntax
         run: node --check apps/lotto/lucky645/api/lotto.js
 
+      - name: Check frontend syntax
+        run: node --check apps/lotto/lucky645/assets/app.js
+
       - name: Run LUCKY 645 tests
         run: node --test apps/lotto/lucky645/tests/api.test.cjs
