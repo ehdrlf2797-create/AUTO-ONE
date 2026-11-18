@@ -59,7 +59,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-research-import-cloud-2"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-research-import-cloud-3"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -170,7 +170,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /data-page="research"/);
   assert.match(html, /id="runResearchBtn"/);
   assert.match(html, /100 전략 · 무작위 200명 · 1,000,000회/);
-  assert.match(html, /\/assets\/research\.js\?v=20261119-research-import-cloud-2/);
+  assert.match(html, /\/assets\/research\.js\?v=20261119-research-import-cloud-3/);
   assert.match(app, /runResearchLab/);
   assert.match(app, /RESEARCH_CANDIDATES_KEY/);
   assert.match(app, /RESEARCH_HISTORY_KEY/);
@@ -179,7 +179,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /id="exportResearchHistoryBtn"/);
   assert.match(html, /id="importResearchHistoryBtn"/);
   assert.match(html, /id="researchHistoryImportFile"/);
-  assert.match(html, /\/assets\/research-history\.js\?v=20261119-research-import-cloud-2/);
+  assert.match(html, /\/assets\/research-history\.js\?v=20261119-research-import-cloud-3/);
   assert.match(app, /function importResearchHistoryFile\(file\)/);
   assert.match(app, /function renderResearchHistory\(\)/);
   assert.match(app, /function exportResearchHistory\(\)/);
