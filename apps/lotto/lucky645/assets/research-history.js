@@ -39,5 +39,7 @@
     }
     return Array.from(byId.values()).sort((a,b) => Date.parse(b.createdAt)-Date.parse(a.createdAt)).slice(0, MAX_RUNS);
   }
-  root.Lucky645ResearchHistory = { normalizeReport, normalizeArchive, mergeRuns, MAX_RUNS };
+  const api = { normalizeReport, normalizeArchive, mergeRuns, MAX_RUNS };
+  root.Lucky645ResearchHistory = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
