@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -103,7 +104,7 @@ test('saved report aggregation scans history once and preserves prior report met
   assert.equal(report.rows[1].entry.id,'a');
   assert.equal(report.rows[1].checks,2);
   assert.equal(report.rows[1].avg,3.5);
-  assert.deepEqual(report.recentHistory.map(row=>row.id),['2','1','3','4','5']);
+  assert.deepEqual(Array.from(report.recentHistory,row=>row.id),['2','1','3','4','5']);
 });
 
 test('saved report keeps only 30 newest history rows while counting the entire history', () => {
