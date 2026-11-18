@@ -1085,7 +1085,10 @@ async function runResearchLab() {
     return;
   }
 
+  researchLastRunMessage = '';
+  researchLastRunTone = 'normal';
   researchRunning = true;
+  if (message) message.className = 'notice research-run-message';
   if (button) {
     button.disabled = true;
     button.textContent = '연구 준비 중…';
