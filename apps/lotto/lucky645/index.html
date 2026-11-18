@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="theme-color" content="#10151d" />
+<title>LUCKY 645 v1.9 | 로또 번호 추천</title>
+<link rel="stylesheet" href="/lotto/assets/app.css" />
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="brand"><div class="brand-mark">6</div><div><div class="brand-name">LUCKY 645</div><div class="brand-sub">LOTTO INSIGHT STUDIO</div></div></div>
+  <div class="nav-label">WORKSPACE</div>
+  <nav class="nav" id="sideNav">
+    <button class="active" data-page="home"><span class="nav-icon">⌂</span>대시보드</button>
+    <button data-page="generator"><span class="nav-icon">✦</span>번호 추천</button>
+    <button data-page="stats"><span class="nav-icon">▥</span>번호 통계</button>
+    <button data-page="analytics"><span class="nav-icon">⌁</span>고급 분석실</button>
+    <button data-page="checker"><span class="nav-icon">✓</span>당첨 확인</button>
+    <button data-page="saved"><span class="nav-icon">▣</span>내 번호 보관함</button>
+    <button data-page="history"><span class="nav-icon">◷</span>회차별 당첨번호</button>
+  </nav>
+  <div class="side-bottom"><strong>🎯 LUCKY NOTE</strong><p>모든 조합의 1등 확률은 동일합니다. 통계는 재미와 참고를 위한 분석 정보입니다.</p></div>
+</aside>
+<main class="main">
+  <header class="topbar"><div><div class="eyebrow">LUCKY 645 · NUMBER LAB</div><div class="top-title" id="pageSubtitle">데이터와 무작위 조합으로 만드는 나만의 번호</div></div><div class="top-actions"><span class="pill" id="dataStatus" title="마우스를 올리면 데이터 연결 및 오류 정보를 볼 수 있습니다.">데이터 연결 확인 중</span><button class="icon-btn" id="refreshBtn" title="당첨 데이터 새로고침">↻</button></div></header>
+
+  <section class="page active" id="page-home">
+    <div class="hero">
+      <div class="hero-card"><div class="hero-kicker">YOUR NEXT COMBINATION STARTS HERE</div><h1>행운의 조합,<br>오늘은 어떤 숫자일까요?</h1><p>무작위 추천부터 과거 회차 통계까지. 마음에 드는 조합을 만들고 저장해 보세요.</p><button class="primary" onclick="navigate('generator')">번호 추천 시작하기&nbsp; ↗</button></div>
+      <div class="latest-card"><div class="card-top"><span class="card-label">가장 최근 추첨 결과</span><span class="split" style="gap:7px"><span class="badge yellow" id="latestVerification">확인 중</span><span class="round-chip" id="latestRound">1249회</span></span></div><div><div class="latest-numbers" id="latestBalls"></div><div class="latest-meta"><span id="latestDate">2026.11.07 추첨</span><span id="latestBonus">보너스 14</span></div></div><div class="split"><span class="small-label" id="latestSourceLabel">출처 확인 중</span><button class="text-link" onclick="navigate('history')">회차 확인 →</button></div></div>
+    </div>
+    <div class="grid-3" style="margin-bottom:18px">
+      <div class="stat-card"><div class="stat-label">누적 분석 회차</div><div class="stat-value" id="statDrawCount">-</div><div class="stat-foot">데이터 연결 후 자동 집계</div></div>
+      <div class="stat-card"><div class="stat-label">내가 저장한 조합</div><div class="stat-value" id="statSaved">0</div><div class="stat-foot">이 기기에 안전하게 저장</div></div>
+      <div class="stat-card"><div class="stat-label">전체 가능한 조합 수</div><div class="stat-value">8,145,060</div><div class="stat-foot">6개 번호를 고르는 전체 조합</div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">빠른 번호 추천</div><div class="panel-desc">완전 무작위·통계 참고·50:50 혼합 방식으로 조합을 만들어 보세요.</div></div><span class="badge green">READY</span></div><div class="mode-grid"><button class="mode-option selected" data-mode="random"><strong>✦ 완전 무작위</strong><span>매번 새롭게 생성하는 기본 조합</span></button><button class="mode-option" data-mode="balanced"><strong>◈ 균형 조합</strong><span>홀짝·번호 구간·합계를 참고</span></button><button class="mode-option" data-mode="stats"><strong>▥ 통계 참고</strong><span>과거 출현 빈도를 참고한 조합</span></button><button class="mode-option" data-mode="hybrid"><strong>✧ 통계 + 무작위 혼합</strong><span>통계 가중 선택과 균등 무작위 선택을 50:50으로 섞음</span></button><button class="mode-option" data-mode="custom"><strong>⚙ 직접 설정</strong><span>포함·제외 번호를 직접 선택</span></button></div><button class="primary" style="width:100%;margin-top:15px" onclick="navigate('generator')">추천 설정 열기&nbsp; →</button></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">최근 결과 미리보기</div><div class="panel-desc">최신 회차와 내 번호를 비교해 보세요.</div></div><button class="text-link" onclick="navigate('checker')">당첨 확인 →</button></div><div id="homeRecent" class="empty">당첨 데이터 확인 중입니다.</div></div>
+    </div>
+    <div class="footer-note">LUCKY 645는 번호 조합을 생성하고 과거 데이터를 시각화하는 참고용 도구입니다. 로또 추첨은 무작위이며 어떠한 추천 방식도 당첨을 보장하거나 실제 당첨 확률을 높이지 않습니다. 복권 구매는 법정 연령 및 관련 규정을 준수해 책임 있게 이용하세요.</div>
+  </section>
+
+  <section class="page" id="page-generator">
+    <div class="split" style="margin-bottom:20px"><div><div class="eyebrow">NUMBER GENERATOR</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">나만의 번호 조합 만들기</h1><div class="panel-desc">원하는 방식을 고르면 1~45 사이의 중복 없는 번호 6개를 추천합니다.</div></div><span class="badge green">6 / 45</span></div>
+    <div class="grid-2">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">① 추천 방식 선택</div><div class="panel-desc">각 방식은 조합을 고르는 기준만 다릅니다.</div></div></div><div class="mode-grid" id="generatorModes"><button class="mode-option selected" data-mode="random"><strong>✦ 완전 무작위</strong><span>모든 번호를 같은 기준으로 무작위 선택</span></button><button class="mode-option" data-mode="balanced"><strong>◈ 균형 조합</strong><span>홀짝·구간·합계를 참고하고 3연속 번호를 제한</span></button><button class="mode-option" data-mode="stats"><strong>▥ 통계 참고</strong><span>과거 출현 빈도를 참고해 후보 조합을 선택</span></button><button class="mode-option" data-mode="hybrid"><strong>✧ 통계 + 무작위 혼합</strong><span>50% 통계 가중 · 50% 균등 무작위 조합</span></button><button class="mode-option" data-mode="custom"><strong>⚙ 직접 설정</strong><span>포함할 번호와 제외할 번호를 지정</span></button></div>
+        <div style="height:1px;background:var(--line);margin:20px 0"></div>
+        <div class="recommend-form"><div class="field"><label for="quantity">생성할 조합 수</label><select id="quantity"><option value="1">1조합</option><option value="3" selected>3조합</option><option value="5">5조합</option><option value="10">10조합</option></select></div><div class="field"><label for="balanceLevel">균형 조건 강도</label><select id="balanceLevel"><option value="soft">느슨하게</option><option value="normal" selected>보통</option><option value="strict">엄격하게</option></select></div><div class="field" id="statsWeightControl" style="grid-column:1/-1;display:none"><label for="statsWeightPeriod">통계 참고 기간</label><select id="statsWeightPeriod"><option value="all">전체 누적 회차</option><option value="100">최근 100회</option><option value="50">최근 50회</option><option value="10">최근 10회</option></select><span class="field-help">선택한 기간의 출현 빈도를 약하게 반영합니다. 당첨 확률이 높아지는 것은 아닙니다.</span></div></div>
+        <div id="customArea" style="display:none;margin-top:20px"><div class="split" style="margin-bottom:9px"><div class="field"><label>포함할 번호 <span class="muted">(최대 5개)</span></label></div><span class="badge" id="includeCount">0 / 5</span></div><div class="number-grid" id="includeGrid"></div><div class="split" style="margin:16px 0 9px"><div class="field"><label>제외할 번호</label></div><span class="badge" id="excludeCount">0개 선택</span></div><div class="number-grid" id="excludeGrid"></div><p class="small-label" style="margin-top:9px">포함 번호와 제외 번호는 동시에 선택할 수 없습니다.</p></div>
+        <button class="primary" id="generateBtn" style="width:100%;margin-top:20px">✦ 번호 조합 생성하기</button>
+      </div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">② 추천 결과</div><div class="panel-desc">마음에 드는 번호는 보관함에 저장하세요.</div></div><span class="badge" id="resultCount">0 조합</span></div><div id="results" class="empty">아직 생성된 조합이 없습니다.<br>왼쪽에서 방식을 선택하고 생성 버튼을 눌러주세요.</div><div class="notice" style="margin-top:15px"><strong>기억해 주세요.</strong> 통계 기반·혼합·균형 조합은 과거 데이터나 보기 좋은 분포를 참고하는 방식입니다. 모든 유효한 6개 번호 조합의 1등 당첨 확률은 동일합니다.</div></div>
+    </div>
+  </section>
+
+  <section class="page" id="page-stats">
+    <div class="eyebrow">LOTTO DATA INSIGHT</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">번호 통계 분석</h1><div class="panel-desc" style="margin-bottom:20px">수집된 과거 당첨번호의 출현 빈도와 분포를 보여줍니다.</div>
+    <div class="panel" style="margin-bottom:18px"><div class="split"><div><div class="panel-title">분석 기간 선택</div><div class="panel-desc" id="statsSampleLabel">누적 데이터를 불러온 뒤 분석 기간이 표시됩니다.</div></div><div class="history-controls"><button class="secondary period-btn active" data-period="all">전체</button><button class="secondary period-btn" data-period="100">최근 100회</button><button class="secondary period-btn" data-period="50">최근 50회</button><button class="secondary period-btn" data-period="10">최근 10회</button></div></div></div>
+    <div class="grid-3" style="margin-bottom:18px"><div class="stat-card"><div class="stat-label">분석 회차</div><div class="stat-value" id="analysisCount">-</div><div class="stat-foot">최신 데이터 기준</div></div><div class="stat-card"><div class="stat-label">가장 많이 나온 번호</div><div class="stat-value" id="hotNumber">-</div><div class="stat-foot" id="hotCount">데이터 대기 중</div></div><div class="stat-card"><div class="stat-label">가장 적게 나온 번호</div><div class="stat-value" id="coldNumber">-</div><div class="stat-foot" id="coldCount">데이터 대기 중</div></div></div>
+    <div class="grid-2"><div class="panel"><div class="panel-head"><div><div class="panel-title">번호별 출현 빈도 TOP 10</div><div class="panel-desc">선택한 분석 기간의 본번호 기준</div></div></div><div id="hotChart" class="empty">통계 데이터 연결 후 표시됩니다.</div></div><div class="panel"><div class="panel-head"><div><div class="panel-title">번호별 출현 빈도 LOW 10</div><div class="panel-desc">표본 기간에서 상대적으로 적게 나온 번호</div></div></div><div id="coldChart" class="empty">통계 데이터 연결 후 표시됩니다.</div></div></div>
+    <div class="grid-2" style="margin-top:18px"><div class="panel"><div class="panel-head"><div><div class="panel-title">홀수와 짝수 분포</div><div class="panel-desc">선택한 분석 기간의 본번호 출현 건수 기준</div></div></div><div id="oddEven" class="empty">데이터 대기 중</div></div><div class="panel"><div class="panel-head"><div><div class="panel-title">번호 구간별 분포</div><div class="panel-desc">1~10, 11~20, 21~30, 31~40, 41~45</div></div></div><div id="rangeChart" class="empty">데이터 대기 중</div></div></div>
+    <div class="notice" style="margin-top:18px"><strong>분석 해석:</strong> 과거 출현 횟수는 미래 추첨 결과를 예측하지 못합니다. 특정 번호가 자주 또는 드물게 나왔다는 사실은 다음 회차에서 해당 번호가 나올 가능성을 바꾸지 않습니다.</div>
+  </section>
+
+  <section class="page" id="page-analytics">
+    <div class="split analytics-title-row" style="margin-bottom:20px"><div><div class="eyebrow">FULL STATISTICAL LAB</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">LUCKY 645 고급 분석실</h1><div class="panel-desc">실제 당첨 회차 원자료로 빈도·간격·동반 출현·분포·패턴을 계산합니다.</div></div><div class="analytics-title-actions"><button class="secondary" id="exportAnalyticsBtn">분석 CSV 내보내기</button><button class="primary" id="startHybridBtn">혼합 추천 만들기 ↗</button></div></div>
+    <div class="panel analytics-toolbar" style="margin-bottom:18px"><div><div class="panel-title">분석 표본</div><div class="panel-desc" id="analyticsSampleLabel">전체 누적 데이터를 불러오는 중입니다.</div><div id="analyticsDataQuality" class="badge yellow" style="margin-top:8px">데이터 연속성 확인 중</div></div><div class="history-controls analytics-periods"><button class="secondary analytics-period-btn active" data-analytics-period="all">전체</button><button class="secondary analytics-period-btn" data-analytics-period="100">최근 100회</button><button class="secondary analytics-period-btn" data-analytics-period="50">최근 50회</button><button class="secondary analytics-period-btn" data-analytics-period="10">최근 10회</button></div></div>
+    <div class="grid-4 analytics-kpis" style="margin-bottom:18px">
+      <div class="stat-card"><div class="stat-label">분석 회차</div><div class="stat-value" id="anaDrawCount">-</div><div class="stat-foot" id="anaRoundRange">데이터 대기 중</div></div>
+      <div class="stat-card"><div class="stat-label">평균 번호 합계</div><div class="stat-value" id="anaAvgSum">-</div><div class="stat-foot">이론 평균 138</div></div>
+      <div class="stat-card"><div class="stat-label">중앙 번호 합계</div><div class="stat-value" id="anaMedianSum">-</div><div class="stat-foot">선택 표본의 중앙값</div></div>
+      <div class="stat-card"><div class="stat-label">평균 홀수 개수</div><div class="stat-value" id="anaAvgOdd">-</div><div class="stat-foot">회차당 6개 기준</div></div>
+    </div>
+    <div class="analytics-grid">
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">번호 출현 TOP 10</div><div class="panel-desc">본번호 6개 기준 실제 출현 횟수</div></div><span class="badge green">빈도</span></div><div id="anaHot" class="empty">데이터 연결 후 표시됩니다.</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">미출현 간격 TOP 10</div><div class="panel-desc">표본 마지막 회차 이후 나타나지 않은 회차 간격</div></div><span class="badge yellow">간격</span></div><div id="anaOverdue" class="empty">데이터 연결 후 표시됩니다.</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">동반 출현 번호 쌍 TOP 10</div><div class="panel-desc">같은 회차 본번호로 함께 나온 횟수 · 우연한 공출현 통계</div></div><span class="badge">990쌍 후보</span></div><div id="anaPairs" class="empty">데이터 연결 후 표시됩니다.</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">홀수 개수별 회차 분포</div><div class="panel-desc">한 회차의 6개 번호 중 홀수가 0~6개인 횟수</div></div></div><div id="anaOddDist" class="empty">데이터 연결 후 표시됩니다.</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">번호 합계 분포</div><div class="panel-desc">회차별 6개 본번호 합계를 구간별로 집계</div></div></div><div id="anaSumDist" class="empty">데이터 연결 후 표시됩니다.</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">번호 구간 분포</div><div class="panel-desc">1~10 · 11~20 · 21~30 · 31~40 · 41~45</div></div></div><div id="anaRangeDist" class="empty">데이터 연결 후 표시됩니다.</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">끝자리 분포</div><div class="panel-desc">번호의 일의 자리 0~9 누적 출현 건수</div></div></div><div id="anaEndingDist" class="empty">데이터 연결 후 표시됩니다.</div></div>
+      <div class="panel"><div class="panel-head"><div><div class="panel-title">연속 번호 패턴</div><div class="panel-desc">한 회차에 포함된 인접 연속쌍과 3연속 이상</div></div></div><div id="anaConsecutive" class="empty">데이터 연결 후 표시됩니다.</div></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">몬테카를로 조합 시뮬레이션</div><div class="panel-desc">과거 당첨을 예측하지 않고, 균등 무작위 조합의 표본 특성을 관찰합니다.</div></div><span class="badge green">무작위 실험</span></div><div class="simulation-controls"><div class="field"><label for="simulationCount">실험 횟수</label><select id="simulationCount"><option value="1000">1,000회</option><option value="5000" selected>5,000회</option><option value="10000">10,000회</option></select></div><button class="primary" id="runSimulationBtn">시뮬레이션 실행</button></div><div id="simulationOutput" class="empty" style="margin-top:15px">실험 횟수를 선택하고 실행 버튼을 눌러주세요.</div></div>
+    <div class="notice" style="margin-top:18px"><strong>해석 원칙:</strong> 출현 빈도, 미출현 간격, 동반 출현은 과거 표본의 기술통계입니다. 특정 번호가 오래 나오지 않았거나 함께 자주 나왔더라도 다음 추첨의 확률은 바뀌지 않습니다. 모든 유효 조합의 1등 확률은 동일합니다.</div>
+  </section>
+
+  <section class="page" id="page-checker">
+    <div class="eyebrow">RESULT CHECKER</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">내 번호 당첨 확인</h1><div class="panel-desc" style="margin-bottom:20px">저장한 조합을 최신 당첨번호 또는 원하는 회차와 비교합니다.</div>
+    <div class="grid-2"><div class="panel"><div class="panel-head"><div><div class="panel-title">확인할 회차</div><div class="panel-desc">회차 번호를 입력하세요.</div></div></div><div class="round-input"><input type="number" id="checkRound" min="1" placeholder="예: 1249"><button class="primary" id="loadRoundBtn">회차 불러오기</button></div><div id="drawToCheck" style="margin-top:18px" class="empty">당첨번호를 불러오면 여기에 표시됩니다.</div></div><div class="panel"><div class="panel-head"><div><div class="panel-title">저장한 번호 일괄 비교</div><div class="panel-desc">보관함의 모든 조합을 선택 회차와 비교합니다.</div></div></div><button class="primary" id="checkSavedBtn" style="width:100%">저장한 번호 당첨 확인</button><div id="checkResults" style="margin-top:14px" class="empty">확인 결과가 여기에 표시됩니다.</div></div></div>
+    <div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">직접 번호 입력</div><div class="panel-desc">저장하지 않은 번호도 비교할 수 있습니다.</div></div><span class="badge" id="manualCount">0 / 6</span></div><div class="number-grid" id="manualGrid"></div><button class="secondary" id="manualCheckBtn" style="margin-top:15px">선택 번호 확인하기</button><div id="manualResult"></div></div>
+  </section>
+
+  <section class="page" id="page-saved">
+    <div class="split" style="margin-bottom:20px"><div><div class="eyebrow">MY COLLECTION</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">내 번호 보관함</h1><div class="panel-desc">저장한 조합은 이 브라우저의 기기에 보관됩니다.</div></div><button class="secondary" id="clearSavedBtn">전체 삭제</button></div>
+
+    <div class="panel" id="cloudSyncPanel" style="margin-bottom:18px">
+      <div class="panel-head"><div><div class="panel-title">☁️ 클라우드 동기화</div><div class="panel-desc">로그인하면 저장 번호와 당첨 확인 이력을 PC·모바일에서 함께 이용할 수 있습니다.</div></div><span class="badge yellow" id="cloudStatus">로그아웃</span></div>
+      <div id="cloudAuthForm">
+        <div class="grid-2">
+          <div class="field"><label for="cloudEmail">이메일</label><input id="cloudEmail" type="email" autocomplete="email" placeholder="이메일 주소"></div>
+          <div class="field"><label for="cloudPassword">비밀번호</label><input id="cloudPassword" type="password" autocomplete="current-password" placeholder="8자 이상" minlength="8"></div>
+        </div>
+        <div class="saved-tools" style="margin-top:12px"><button class="primary" id="cloudSignInBtn">로그인</button><button class="secondary" id="cloudSignUpBtn">회원가입</button></div>
+      </div>
+      <div id="cloudAccountPanel" style="display:none">
+        <div class="split"><div><strong id="cloudUserEmail"></strong><div class="field-help">계정에 연결된 데이터는 본인만 접근할 수 있습니다.</div></div><div class="saved-tools"><button class="primary" id="cloudSyncNowBtn">지금 동기화</button><button class="secondary" id="cloudSignOutBtn">로그아웃</button></div></div>
+      </div>
+      <div id="cloudMessage" class="notice" style="margin-top:12px">계정에 로그인하면 이 기기의 저장 번호와 확인 이력을 클라우드에 병합합니다. 기존 로컬 데이터는 유지됩니다.</div>
+    </div>
+    <div class="panel"><div class="panel-head"><div><div class="panel-title">저장된 조합</div><div class="panel-desc">즐겨찾기 표시와 파일 백업을 지원합니다.</div></div><div class="saved-actions"><span class="badge" id="savedCount">0 조합</span><button class="secondary" id="exportSavedBtn">백업 저장</button><button class="secondary" id="importSavedBtn">백업 불러오기</button><input id="savedImportFile" type="file" accept="application/json,.json"></div></div><div class="saved-filters"><button class="secondary active" data-saved-filter="all">전체</button><button class="secondary" data-saved-filter="favorites">★ 즐겨찾기</button></div><div id="savedList" class="empty">아직 저장된 번호가 없습니다.<br>번호 추천 페이지에서 마음에 드는 조합을 저장해 주세요.</div></div>
+    <div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">자동 당첨 확인 및 이력</div><div class="panel-desc">새 회차뿐 아니라 사이트를 닫아 두어 놓친 회차도 순서대로 비교합니다. 이 기록은 이 브라우저에 보관됩니다.</div></div><div class="saved-tools"><button class="secondary" id="requestDrawNotificationsBtn">알림 켜기</button><button class="secondary" id="exportSavedCheckCsvBtn">이력 CSV</button><button class="secondary" id="exportSavedPdfBtn">PDF 보고서</button></div></div><div class="saved-insight-grid" id="savedCheckKpis"><div class="saved-insight-card"><span>누적 확인</span><strong>0건</strong></div><div class="saved-insight-card"><span>1~3등</span><strong>0건</strong></div><div class="saved-insight-card"><span>4~5등</span><strong>0건</strong></div><div class="saved-insight-card"><span>마지막 확인</span><strong>-</strong></div></div><div id="savedCheckStatus" class="notice" style="margin-top:13px">최신 공식 결과를 확인하면 자동 비교합니다. 알림은 브라우저 권한이 허용된 경우에만 표시됩니다.</div><div id="savedCheckHistory" style="margin-top:14px" class="empty">아직 당첨 확인 이력이 없습니다.</div></div>
+    <div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">저장 조합 성과 순위</div><div class="panel-desc">이 기기에 기록된 비교 결과만 집계합니다. 조합 간 미래 당첨 확률 차이를 뜻하지 않습니다.</div></div></div><div id="savedPerformance" class="empty">비교 기록이 쌓이면 조합별 성과를 표시합니다.</div></div>
+    <div class="panel" style="margin-top:18px"><div class="panel-head"><div><div class="panel-title">과거 회차 백테스트</div><div class="panel-desc">현재 보관한 조합을 확보된 모든 과거 회차에 대입한 가상 비교입니다. 과거 결과는 미래 예측력이 없습니다.</div></div><div class="saved-tools"><select id="savedBacktestPeriod"><option value="year">연도별 보기</option><option value="month">월별 보기</option></select><button class="primary" id="runSavedBacktestBtn">백테스트 실행</button></div></div><div id="savedBacktestOutput" class="empty">실행 버튼을 눌러 과거 회차 비교를 계산하세요.</div></div>
+  </section>
+
+  <section class="page" id="page-history">
+    <div class="eyebrow">DRAW HISTORY</div><h1 style="font-size:29px;margin:8px 0 5px;letter-spacing:-.04em">회차별 당첨번호</h1><div class="panel-desc" style="margin-bottom:20px">공식 결과 데이터와 대조 가능한 회차 정보를 확인합니다.</div>
+    <div class="panel"><div class="split" style="margin-bottom:15px"><div><div class="panel-title">당첨 결과 목록</div><div class="panel-desc" id="historySummary">데이터 연결 후 최신 회차부터 표시됩니다.</div></div><div class="history-controls"><input type="number" id="historySearch" placeholder="회차 검색"><button class="secondary" id="historySearchBtn">검색</button></div></div><div id="historyList" class="empty">당첨 데이터를 불러오는 중입니다.</div><div class="split" style="margin-top:14px"><button class="secondary" id="prevHistory">← 이전 회차</button><span class="small-label" id="historyPageLabel">1 페이지</span><button class="secondary" id="nextHistory">다음 회차 →</button></div></div>
+  </section>
+
+  <div class="footer-note">데이터 출처: <a href="https://www.dhlottery.co.kr/lt645/intro" target="_blank" rel="noopener">동행복권 로또6/45</a> 최신 결과 + <a href="https://github.com/visionary153/lotto-api" target="_blank" rel="noopener">누적 회차 공개 JSON</a>. 누적 자료는 동행복권 공개 회차 기록을 바탕으로 한 제3자 데이터 사본이며, 앱은 최신 회차를 공식 결과와 재대조합니다. 보조 출처: <a href="https://cashlogy.kr/lotto/excel" target="_blank" rel="noopener">Cashlogy CSV</a>.<br>LUCKY 645는 독립 운영되는 정보·조합 도구이며 동행복권과 제휴 또는 공식 관계가 없습니다.</div>
+</main>
+</div>
+<nav class="mobile-nav" id="mobileNav"><button class="active" data-page="home"><span>⌂</span>홈</button><button data-page="generator"><span>✦</span>추천</button><button data-page="stats"><span>▥</span>통계</button><button data-page="analytics"><span>⌁</span>분석실</button><button data-page="checker"><span>✓</span>당첨확인</button><button data-page="saved"><span>▣</span>보관함</button><button data-page="history"><span>◷</span>회차</button></nav>
+<div class="toast" id="toast"></div>
+<script defer src="/lotto/assets/app.js"></script>
+</body>
+</html>
