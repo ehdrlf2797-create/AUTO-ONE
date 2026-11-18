@@ -18,8 +18,8 @@ test('all seven app sections are reachable from the mobile navigation', () => {
   const nav = html.slice(navStart, navEnd);
   const pages = [...nav.matchAll(/data-page="([^"]+)"/g)].map(match => match[1]);
 
-  assert.equal(pages.length, 7, 'all seven sections should be represented');
-  assert.equal(new Set(pages).size, 7, 'navigation targets should be unique');
+  assert.equal(pages.length, 8, 'all eight sections should be represented');
+  assert.equal(new Set(pages).size, 8, 'navigation targets should be unique');
   for (const page of pages) {
     assert.ok(html.includes(`id="page-${page}"`), `missing page container for ${page}`);
   }
@@ -58,7 +58,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-performance-audit-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-simulation-studio-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -135,3 +135,16 @@ test('saved report renderer uses pre-aggregated stats rather than filtering hist
   assert.doesNotMatch(renderer,/savedCheckHistory\.filter\(/);
 });
 
+
+
+test('dedicated simulation page exposes run, graph, result storage, and number-combination controls', () => {
+  assert.match(html, /id="page-simulation"/);
+  assert.match(html, /data-page="simulation"/);
+  assert.match(html, /id="runSimulationStudioBtn"/);
+  assert.match(html, /id="simulationFrequencyChart"/);
+  assert.match(html, /id="simulationProfileSelect"/);
+  assert.match(html, /id="buildSimulationTicketsBtn"/);
+  assert.match(html, /id="saveSimulationTicketsBtn"/);
+  assert.match(css, /\.simulation-frequency-grid/);
+  assert.match(css, /\.simulation-expected-marker/);
+});
