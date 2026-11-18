@@ -1160,7 +1160,7 @@ async function runResearchLab() {
     }));
     researchCandidates = researchCandidates.slice(0,100);
     const persisted = persistResearchState();
-    if (persisted && cloudSession?.access_token) scheduleCloudSync();
+    if (persisted && typeof cloudSession !== 'undefined' && cloudSession?.access_token) scheduleCloudSync();
     renderResearchLab();
     updateResearchProgress('연구 완료', 1, 1, 100, 0);
     const completion = '연구 완료: '+formatNumber(report.drawCount)+'회 데이터 · 전략 '+report.strategyCount+'개 · 몬테카를로 '+formatNumber(report.simulationCount)+'회 · 소요 '+(report.elapsedMs/1000).toFixed(1)+'초 · 새 후보 '+newCandidates.length+'개.';
