@@ -256,8 +256,33 @@ test('saved-combination tombstones carry a number fingerprint for duplicate-devi
   assert.equal(state.scheduled,1);
 });
 
-test('cloud sync suppresses other-device copies by deleted combination fingerprint', () => {
-  assert.match(appSource, /deletedSavedNumbers\.has\(key\)/);
-  assert.match(appSource, /finalDeletedSavedNumbers\.has\(sortNums\(row\.payload\.numbers\)\.join\('-'\)\)/);
+test('cloud sync suppresses old duplicate copies but permits a later re-save', () => {
+  const start = appSource.indexOf('function deletedSavedNumberMap(');
+  const end = appSource.indexOf('\nfunction buildLocalCloudRows()',start);
+  assert.notEqual(start,-1);
+  assert.notEqual(end,-1);
+  const context = {};
+  vm.runInNewContext(
+    'function sortNums(numbers) { return [...numbers].sort((a,b)=>a-b); }\n' +
+    appSource.slice(start,end) +
+    '\nthis.deletedSavedNumberMap=deletedSavedNumberMap;' +
+    '\nthis.isSavedCombinationDeleted=isSavedCombinationDeleted;',
+    context
+  );
+  const deletedAt='2026-11-18T15:00:00.000Z';
+  const tombstones=context.deletedSavedNumberMap([
+    {category:'saved_combination',record_key:'old-id',numbers_key:'1-2-3-4-5-6',deleted_at:deletedAt}
+  ]);
+  assert.equal(context.isSavedCombinationDeleted({
+    numbers:[6,5,4,3,2,1],
+    syncUpdatedAt:'2026-11-18T14:59:59.000Z'
+  },tombstones),true);
+  assert.equal(context.isSavedCombinationDeleted({
+    numbers:[1,2,3,4,5,6],
+    syncUpdatedAt:'2026-11-18T15:00:01.000Z'
+  },tombstones),false);
+  assert.equal(context.isSavedCombinationDeleted({
+    numbers:[1,2,3,4,5,6]
+  },tombstones),true);
   assert.match(appSource, /payload:row\.numbers_key\?\{numbers_key:row\.numbers_key\}:\{\}/);
 });
