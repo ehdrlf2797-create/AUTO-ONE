@@ -78,6 +78,36 @@ test('portfolio simulator compares equal ticket counts with identical jackpot od
   }
 });
 
+test('backtest range selection returns the requested latest draw window', () => {
+  const start = appSource.indexOf('function selectBacktestDraws(');
+  const end = appSource.indexOf('\nfunction runSavedBacktest()', start);
+  assert.notEqual(start, -1, 'backtest range helper must exist');
+  assert.notEqual(end, -1, 'backtest range helper must end before the runner');
+  const context = {};
+  vm.runInNewContext(
+    appSource.slice(start, end) + '\nthis.selectBacktestDraws=selectBacktestDraws;',
+    context
+  );
+  const history = Array.from({length:1250},(_,index)=>({round:index+1}));
+  assert.equal(context.selectBacktestDraws(history,'all').length,1250);
+  assert.equal(context.selectBacktestDraws(history,'100').length,100);
+  assert.equal(context.selectBacktestDraws(history,'100')[0].round,1151);
+  assert.equal(context.selectBacktestDraws(history,'250').at(-1).round,1250);
+  assert.equal(context.selectBacktestDraws(history,'invalid').length,1250);
+});
+
+test('portfolio simulator has a fast non-cryptographic default RNG and UI explicitly uses it', () => {
+  assert.match(appSource, /function simulatePortfolioStrategies\(count, rng = Math\.random\)/);
+  assert.match(appSource, /simulatePortfolioStrategies\(attempts, Math\.random\)/);
+  assert.match(appSource, /async function runPortfolioSimulation\(\)/);
+});
+
+test('backtest is recalculated after saved combinations and draw data change', () => {
+  assert.match(appSource, /if \(savedBacktestResult\) runSavedBacktest\(\);/);
+  assert.match(appSource, /savedBacktestRange'\)\.addEventListener\('change'/);
+  assert.match(appSource, /fromRound:selectedDraws\[0\]\.round/);
+});
+
 test('portfolio simulator rejects unsupported run counts', () => {
   const context = makeContext();
   assert.throws(
