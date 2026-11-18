@@ -9,8 +9,9 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'assets/app.css'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
 
-test('all seven app sections are reachable from the mobile navigation', () => {
+test('all eight app sections are reachable from the mobile navigation', () => {
   const navStart = html.indexOf('<nav class="mobile-nav"');
   assert.notEqual(navStart, -1, 'mobile navigation must exist');
   const navEnd = html.indexOf('</nav>', navStart);
