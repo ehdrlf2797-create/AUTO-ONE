@@ -73,6 +73,11 @@ const formatNumber = n => Number(n || 0).toLocaleString('ko-KR');
 const money = n => `${formatNumber(n)}원`;
 const escapeHtml = value => String(value).replace(/[&<>\"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[character]));
 
+function normalizeSyncTimestamp(value) {
+  const timestamp = typeof value === 'string' ? Date.parse(value) : NaN;
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : '';
+}
+
 function normalizeSavedEntry(entry, index = 0) {
   if (!entry || typeof entry !== 'object' || !Array.isArray(entry.numbers)) return null;
   const numbers = entry.numbers.map(Number);
@@ -82,7 +87,8 @@ function normalizeSavedEntry(entry, index = 0) {
     numbers: sortNums(numbers),
     mode: ['random','balanced','stats','hybrid','custom','coverage'].includes(entry.mode) ? entry.mode : 'random',
     date: typeof entry.date === 'string' ? entry.date.slice(0, 32) : '',
-    favorite: Boolean(entry.favorite)
+    favorite: Boolean(entry.favorite),
+    syncUpdatedAt: normalizeSyncTimestamp(entry.syncUpdatedAt)
   };
 }
 
@@ -176,6 +182,17 @@ function autoCheckLatestDraw() {
   if (!Number.isInteger(currentRound) || currentRound < 1) return;
 
   // 첫 실행은 기준점만 저장합니다. 첫 저장 이전의 회차를 소급 검사하지 않습니다.
+  // 가져온 백업이나 다른 기기의 오래된 기준 회차가 최신 공식 회차보다
+  // 앞서 있으면 자동 확인이 영구 정지하지 않도록 현재 회차에 맞춥니다.
+  if (Number(autoCheckMeta.lastRound) > currentRound) {
+    autoCheckMeta.lastRound = currentRound;
+    autoCheckMeta.lastCheckedAt = new Date().toISOString();
+    autoCheckMeta.lastStatus = '보유한 최신 공식 회차에 맞춰 기준 회차 보정';
+    persistAutoCheckMeta();
+    renderSavedReports();
+    return;
+  }
+
   if (!autoCheckMeta.lastRound) {
     autoCheckMeta.lastRound = currentRound;
     autoCheckMeta.lastCheckedAt = new Date().toISOString();
@@ -1201,6 +1218,7 @@ function renderSaved() {
 function toggleSavedFavorite(index) {
   if (!saved[index]) return;
   saved[index].favorite = !saved[index].favorite;
+  saved[index].syncUpdatedAt = new Date().toISOString();
   persistSaved();
   toast(saved[index].favorite ? '즐겨찾기에 추가했습니다.' : '즐겨찾기에서 해제했습니다.');
 }
@@ -1231,25 +1249,43 @@ async function importSavedBackup(file) {
     normalized.forEach(entry=>{
       const key = entry.numbers.join('-');
       let local = localByNumbers.get(key);
-      if (!local) { local = {...entry,id:`import-${Date.now()}-${added}`}; saved.push(local); localByNumbers.set(key,local); added++; }
-      else if (entry.favorite) local.favorite = true;
+      if (!local) {
+        local = {...entry,id:`import-${Date.now()}-${added}`,syncUpdatedAt:entry.syncUpdatedAt || new Date().toISOString()};
+        saved.push(local); localByNumbers.set(key,local); added++;
+      } else {
+        const wasFavorite = local.favorite;
+        mergeCloudSavedRecord(local,entry);
+        if (entry.favorite && !wasFavorite) {
+          local.favorite = true;
+          local.syncUpdatedAt = new Date().toISOString();
+        }
+      }
       importedIdMap.set(String(entry.id), local.id);
     });
     const importedHistory = Array.isArray(raw?.savedCheckHistory) ? raw.savedCheckHistory.map(normalizeSavedCheckRecord).filter(Boolean) : [];
-    const historyKeys = new Set(savedCheckHistory.map(row=>`${row.round}:${row.savedId}`));
+    const historyKeys = new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
     let historyAdded = 0;
     importedHistory.forEach(row=>{
       const local = localByNumbers.get(row.numbers.join('-'));
       if (local) row.savedId = local.id;
       else if (importedIdMap.has(row.savedId)) row.savedId = importedIdMap.get(row.savedId);
-      const key=`${row.round}:${row.savedId}`;
-      if(!historyKeys.has(key)){savedCheckHistory.push(row);historyKeys.add(key);historyAdded++;}
+      const key=`${Number(row.round)}:${String(row.savedId || row.id)}`;
+      if(!historyKeys.has(key)){
+        row.id = key;
+        savedCheckHistory.push(row); historyKeys.add(key); historyAdded++;
+      }
     });
     if (raw?.autoCheckMeta && typeof raw.autoCheckMeta === 'object') {
-      const importedRound = Number(raw.autoCheckMeta.lastRound) || 0;
-      autoCheckMeta.lastRound = Math.max(autoCheckMeta.lastRound || 0, importedRound);
-      if (raw.autoCheckMeta.lastCheckedAt && (!autoCheckMeta.lastCheckedAt || String(raw.autoCheckMeta.lastCheckedAt)>autoCheckMeta.lastCheckedAt)) autoCheckMeta.lastCheckedAt=String(raw.autoCheckMeta.lastCheckedAt);
-      autoCheckMeta.lastStatus = '백업에서 복원';
+      const importedRound = Number(raw.autoCheckMeta.lastRound);
+      const newestKnownRound = Number(draws.at(-1)?.round || latest?.round || 0);
+      if (Number.isSafeInteger(importedRound) && importedRound >= 0 && newestKnownRound > 0) {
+        autoCheckMeta.lastRound = Math.max(autoCheckMeta.lastRound || 0, Math.min(importedRound,newestKnownRound));
+      }
+      const importedCheckedAt = normalizeSyncTimestamp(raw.autoCheckMeta.lastCheckedAt);
+      if (importedCheckedAt && (!autoCheckMeta.lastCheckedAt || importedCheckedAt > autoCheckMeta.lastCheckedAt)) {
+        autoCheckMeta.lastCheckedAt = importedCheckedAt;
+      }
+      autoCheckMeta.lastStatus = '백업에서 복원 · 회차 기준 검증 완료';
       persistAutoCheckMeta();
     }
     persistSavedCheckHistory();
@@ -1583,7 +1619,7 @@ function saveCombination(numbers,mode=activeMode) {
   if (!Array.isArray(numbers) || numbers.length!==6 || new Set(numbers).size!==6 || numbers.some(n=>!Number.isInteger(n)||n<1||n>45)) return toast('저장할 번호 조합이 올바르지 않습니다.');
   const key=numbers.join('-');
   if (saved.some(entry=>Array.isArray(entry.numbers) && entry.numbers.join('-')===key)) return toast('이미 보관함에 저장된 조합입니다.');
-  saved.unshift({id:`${Date.now()}-${Math.random().toString(16).slice(2)}`,numbers:sortNums(numbers),mode,date:new Date().toLocaleDateString('ko-KR'),favorite:false});
+  saved.unshift({id:`${Date.now()}-${Math.random().toString(16).slice(2)}`,numbers:sortNums(numbers),mode,date:new Date().toLocaleDateString('ko-KR'),favorite:false,syncUpdatedAt:new Date().toISOString()});
   if (!autoCheckMeta.lastRound && dataReady && latestVerification === 'official' && Number(latest?.round)>0) {
     autoCheckMeta.lastRound = Number(latest.round);
     autoCheckMeta.lastCheckedAt = new Date().toISOString();
@@ -1766,6 +1802,41 @@ async function cloudSignOut() {
   saveCloudSession(null);
   if($('cloudMessage'))$('cloudMessage').textContent='로그아웃했습니다. 이 기기의 로컬 데이터는 그대로 유지됩니다.';
 }
+function mergeCloudSavedRecord(localEntry, remoteEntry) {
+  const normalized = normalizeSavedEntry(remoteEntry);
+  if (!normalized) return localEntry || null;
+  if (!localEntry) return normalized;
+
+  const localTime = Date.parse(localEntry.syncUpdatedAt || '') || 0;
+  const remoteTime = Date.parse(normalized.syncUpdatedAt || '') || 0;
+  if (remoteTime > localTime) {
+    // Keep the local stable ID so existing check-history links remain valid.
+    localEntry.mode = normalized.mode;
+    localEntry.date = normalized.date;
+    localEntry.favorite = normalized.favorite;
+    localEntry.syncUpdatedAt = normalized.syncUpdatedAt;
+  }
+  return localEntry;
+}
+
+function normalizeCloudHistoryRecord(row, remoteSavedById, localSaved) {
+  if (!row || !row.payload || typeof row.payload !== 'object') return null;
+  const item = normalizeSavedCheckRecord({
+    ...row.payload,
+    id: row.payload.id || String(row.record_key || '')
+  });
+  if (!item) return null;
+
+  const mapped = remoteSavedById.get(String(item.savedId));
+  if (mapped) item.savedId = mapped;
+  const local = localSaved.find(entry => entry.numbers.join('-') === item.numbers.join('-'));
+  if (local) item.savedId = local.id;
+  item.id = item.savedId
+    ? `${item.round}:${item.savedId}`
+    : String(row.record_key || item.id);
+  return item;
+}
+
 function buildLocalCloudRows() {
   const rows=[];
   saved.forEach(item=>rows.push({category:'saved_combination',record_key:String(item.id),payload:item}));
@@ -1787,31 +1858,60 @@ async function performCloudSync() {
   const remote=await cloudRequest('/rest/v1/lucky645_sync_records?select=category,record_key,payload,deleted_at,updated_at&order=updated_at.asc',{method:'GET'},token);
   const tombstoneMap=new Map(loadCloudTombstones().map(row=>[row.category+':'+row.record_key,row]));
   (remote||[]).filter(row=>row.deleted_at).forEach(row=>tombstoneMap.set(row.category+':'+row.record_key,{category:row.category,record_key:row.record_key,deleted_at:row.deleted_at}));
-  persistCloudTombstones([...tombstoneMap.values()]);
   const deleted=new Set([...tombstoneMap.keys()]);
   const remoteActive=(remote||[]).filter(row=>!row.deleted_at&&!deleted.has(row.category+':'+row.record_key));
   const localSavedByNumbers=new Map(saved.map(item=>[item.numbers.join('-'),item]));
   const remoteSavedById=new Map();
+
   remoteActive.filter(row=>row.category==='saved_combination').forEach(row=>{
-    const item=row.payload;
-    if(!item||!Array.isArray(item.numbers))return;
+    const item=normalizeSavedEntry(row.payload);
+    if(!item)return;
     const key=item.numbers.join('-');
-    if(!localSavedByNumbers.has(key)){saved.push(item);localSavedByNumbers.set(key,item);}
-    remoteSavedById.set(String(item.id),localSavedByNumbers.get(key).id);
+    let local=localSavedByNumbers.get(key);
+    if(!local){
+      local=item;
+      saved.push(local);
+      localSavedByNumbers.set(key,local);
+    }else{
+      mergeCloudSavedRecord(local,item);
+    }
+    remoteSavedById.set(String(row.payload?.id || row.record_key),local.id);
+    // 여러 기기에서 같은 번호가 각각 생성되었더라도 저장 조합은 한 개로 합칩니다.
+    if(String(row.record_key)!==String(local.id)){
+      tombstoneMap.set('saved_combination:'+String(row.record_key),{
+        category:'saved_combination',record_key:String(row.record_key),deleted_at:new Date().toISOString()
+      });
+    }
   });
-  const historyKeys=new Set(savedCheckHistory.map(row=>String(row.id||row.round+':'+row.savedId)));
+
+  const historyKeys=new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
   remoteActive.filter(row=>row.category==='check_history').forEach(row=>{
-    const item={...row.payload}, mapped=remoteSavedById.get(String(item.savedId));
-    if(mapped)item.savedId=mapped;
-    const local=saved.find(entry=>entry.numbers.join('-')===((item.numbers||[]).join('-')));
-    if(local)item.savedId=local.id;
-    const key=String(item.id||item.round+':'+item.savedId);
-    if(!historyKeys.has(key)){savedCheckHistory.push(item);historyKeys.add(key);}
+    const item=normalizeCloudHistoryRecord(row,remoteSavedById,saved);
+    if(!item)return;
+    const key=`${Number(item.round)}:${String(item.savedId || item.id)}`;
+    if(!historyKeys.has(key)){
+      item.id=key;
+      savedCheckHistory.push(item);
+      historyKeys.add(key);
+    }
+    // 매핑 전 ID로 저장된 이력은 표준화한 키로 옮기고 이전 키를 tombstone 처리합니다.
+    if(String(row.record_key)!==String(item.id)){
+      tombstoneMap.set('check_history:'+String(row.record_key),{
+        category:'check_history',record_key:String(row.record_key),deleted_at:new Date().toISOString()
+      });
+    }
   });
+
   const remoteState=remoteActive.find(row=>row.category==='auto_check_state'&&row.record_key==='default')?.payload;
-  if(remoteState&&Number(remoteState.lastRound)>Number(autoCheckMeta.lastRound)) autoCheckMeta={...remoteState};
+  const newestKnownRound=Number(draws.at(-1)?.round || latest?.round || 0);
+  const remoteRound=Number(remoteState?.lastRound);
+  if(remoteState&&Number.isSafeInteger(remoteRound)&&remoteRound>Number(autoCheckMeta.lastRound)&&newestKnownRound>0){
+    autoCheckMeta={...remoteState,lastRound:Math.min(remoteRound,newestKnownRound)};
+  }
+
   saved=saved.filter(item=>!deleted.has('saved_combination:'+String(item.id)));
   savedCheckHistory=savedCheckHistory.filter(item=>!deleted.has('check_history:'+String(item.id||item.round+':'+item.savedId)));
+  persistCloudTombstones([...tombstoneMap.values()]);
   cloudApplying=true;
   try{
     localStorage.setItem(SAVED_KEY,JSON.stringify(saved));
@@ -1819,7 +1919,12 @@ async function performCloudSync() {
     localStorage.setItem(AUTO_CHECK_KEY,JSON.stringify(autoCheckMeta));
     renderSaved();renderSavedReports();updateTopStats();
   }finally{cloudApplying=false;}
-  const activeRows=buildLocalCloudRows().filter(row=>!deleted.has(row.category+':'+row.record_key));
+
+  if(dataReady && latestVerification==='official') autoCheckLatestDraw();
+  if(savedBacktestResult) runSavedBacktest();
+
+  const finalDeleted=new Set([...tombstoneMap.keys()]);
+  const activeRows=buildLocalCloudRows().filter(row=>!finalDeleted.has(row.category+':'+row.record_key));
   const deletedRows=[...tombstoneMap.values()].map(row=>({category:row.category,record_key:row.record_key,payload:{},deleted_at:row.deleted_at}));
   await cloudUpsert([...activeRows,...deletedRows],token);
   if(message)message.textContent='동기화 완료: 저장 조합 '+saved.length+'개 · 확인 이력 '+savedCheckHistory.length+'건. 이 기기와 클라우드 데이터를 병합했습니다.';
