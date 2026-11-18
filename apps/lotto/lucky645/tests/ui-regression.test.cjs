@@ -169,10 +169,16 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /id="page-research"/);
   assert.match(html, /data-page="research"/);
   assert.match(html, /id="runResearchBtn"/);
-  assert.match(html, /100 전략 · 1,000,000회/);
-  assert.match(html, /\/assets\/research\.js\?v=20261119-research-lab-1/);
+  assert.match(html, /100 전략 · 무작위 200명 · 1,000,000회/);
+  assert.match(html, /\/assets\/research\.js\?v=20261119-research-tournament-1/);
   assert.match(app, /runResearchLab/);
   assert.match(app, /RESEARCH_CANDIDATES_KEY/);
+  assert.match(app, /RESEARCH_HISTORY_KEY/);
+  assert.match(html, /id="researchHistoryList"/);
+  assert.match(html, /id="researchCompareSelect"/);
+  assert.match(html, /id="exportResearchHistoryBtn"/);
+  assert.match(app, /function renderResearchHistory\(\)/);
+  assert.match(app, /function exportResearchHistory\(\)/);
 });
 
 
@@ -183,6 +189,20 @@ test('research control stays clickable for actionable preflight diagnostics', ()
   assert.match(section, /id="researchRunMessage"[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(app, /button\.disabled = researchRunning;/);
   assert.match(app, /데이터 사전 검사 실패:/);
-  assert.match(app, /updateResearchProgress\('2\/3 전략 평가 '/);
-  assert.match(app, /updateResearchProgress\('3\/3 몬테카를로 '/);
+  assert.match(app, /updateResearchProgress\('2\/4 무작위 기준선 '/);
+  assert.match(app, /updateResearchProgress\('3\/4 전략 토너먼트 '/);
+  assert.match(app, /updateResearchProgress\('4\/4 몬테카를로 '/);
+  assert.match(app, /recordResearchRun\(report\)/);
+});
+
+
+test('research lab includes randomized tournament and run-history comparison surfaces', () => {
+  assert.match(html, /무작위 200명/);
+  assert.match(html, /5개 시간순 구간/);
+  assert.match(app, /randomWinRate/);
+  assert.match(app, /researchCompareSummary/);
+  assert.match(app, /RESEARCH_HISTORY_KEY/);
+  assert.match(app, /MAX_RESEARCH_HISTORY = 12/);
+  assert.match(css, /\.research-history-row/);
+  assert.match(css, /\.research-tournament-summary/);
 });
