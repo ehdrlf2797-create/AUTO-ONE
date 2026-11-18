@@ -345,3 +345,11 @@ test('cloud history normalization supports O(1) saved-combination lookup maps', 
   assert.equal(normalized.savedId,'local-a');
   assert.equal(normalized.id,'1250:local-a');
 });
+
+test('cloud sync buckets remote rows in one pass without materializing a duplicate active-row list', () => {
+  assert.match(appSource,/const remoteSavedRows=\[\];/);
+  assert.match(appSource,/const remoteHistoryRows=\[\];/);
+  assert.match(appSource,/for\(const row of Array\.isArray\(remote\)\?remote:\[\]\)/);
+  assert.doesNotMatch(appSource,/remoteActive\.filter\(/);
+});
+
