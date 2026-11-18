@@ -22,7 +22,8 @@ function makeContext() {
     '\nthis.createCoveragePortfolio=createCoveragePortfolio;' +
     '\nthis.createRandomPortfolio=createRandomPortfolio;' +
     '\nthis.evaluateTicketPortfolio=evaluateTicketPortfolio;' +
-    '\nthis.simulatePortfolioStrategies=simulatePortfolioStrategies;',
+    '\nthis.simulatePortfolioStrategies=simulatePortfolioStrategies;' +
+    '\nthis.simulatePortfolioStrategiesAsync=simulatePortfolioStrategiesAsync;',
     context
   );
   return context;
@@ -94,6 +95,22 @@ test('backtest range selection returns the requested latest draw window', () => 
   assert.equal(context.selectBacktestDraws(history,'100')[0].round,1151);
   assert.equal(context.selectBacktestDraws(history,'250').at(-1).round,1250);
   assert.equal(context.selectBacktestDraws(history,'invalid').length,1250);
+});
+
+test('portfolio simulation async runner reports progress and completes in chunks', async () => {
+  const context = makeContext();
+  context.window = { setTimeout: callback => setTimeout(callback,0) };
+  const progress = [];
+  const result = await context.simulatePortfolioStrategiesAsync(
+    1000,
+    seededRng(20261118),
+    (completed,total) => progress.push([completed,total])
+  );
+  assert.equal(result.attempts,1000);
+  assert.equal(progress.length,4);
+  assert.deepEqual(progress.map(item=>item[0]),[250,500,750,1000]);
+  assert.ok(progress.every(item=>item[1]===1000));
+  assert.equal(result.ticketCount,10);
 });
 
 test('portfolio simulator has a fast non-cryptographic default RNG and UI explicitly uses it', () => {
