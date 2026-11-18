@@ -5,6 +5,7 @@ const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
+const historyHelpers = require('../assets/research-history.js');
 
 const appSource = fs.readFileSync(path.join(__dirname, '../assets/app.js'), 'utf8');
 const historyStart = appSource.indexOf('function loadResearchHistory(');
@@ -30,7 +31,7 @@ function makeReport(index) {
       candidateCount: 0,
       testCount: 250,
       strategies: [
-        { id: 'strategy-a', label: '장기 빈도', averageMatches: 0.82, randomWinRate: 0.6 }
+        { id: 'strategy-a', label: '장기 빈도', averageMatches: 0.82, baselineAverage: 0.8, delta: 0.02, zScore: 0.5, randomWinRate: 0.6 }
       ]
     }
   };
@@ -45,6 +46,7 @@ function contextWithStorage(initial = {}) {
   };
   const context = {
     localStorage: storage,
+    window: { Lucky645ResearchHistory: historyHelpers },
     RESEARCH_HISTORY_KEY: 'history',
     RESEARCH_REPORT_KEY: 'report',
     RESEARCH_CANDIDATES_KEY: 'candidates',
