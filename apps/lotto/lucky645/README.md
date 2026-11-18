@@ -56,3 +56,6 @@ Vercel 프로젝트의 Root Directory를 `apps/lotto/lucky645`로 설정하고 F
 - 기존 화면의 계정 토큰 저장 방식은 후속 보안 개선 대상입니다. 브라우저 localStorage에 세션 토큰을 보관하므로 XSS 방어, 서버 세션 전환, RLS 검증을 별도 작업해야 합니다.
 - 판매점 전국 지도는 아직 이 모듈에 편입되지 않았습니다. 기존 UI가 제공하지 않는 데이터를 추정해 표시하지 않습니다.
 - 사이트 배포본의 Node 런타임 경고 `DEP0169 url.parse()`는 런타임 경고 로그에서 발견했지만, 현재 소스 일부가 배포 API에서 잘려 제공되어 발원 dependency까지 특정하지 못했습니다. 이 경고를 수정 완료로 표시하지 않습니다.
+## Deployment connection status
+
+The initial `auto-one-lucky645` Vercel project was deployed from source files because the Vercel account does not currently have a GitHub Login Connection configured. This first deployment is not automatically updated by Git pushes. Add the GitHub Login Connection in Vercel, then connect the repository to enable automatic deployments. The existing `lucky645-seven.vercel.app` project remains separate and unchanged.
