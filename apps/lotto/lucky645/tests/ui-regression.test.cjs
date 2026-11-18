@@ -57,7 +57,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261118-integrity-audit-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-performance-audit-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -67,3 +67,70 @@ test('deployment adds clickjacking and cross-domain policy protection', () => {
   assert.equal(values['x-frame-options'],'DENY');
   assert.equal(values['x-permitted-cross-domain-policies'],'none');
 });
+
+test('saved report aggregation scans history once and preserves prior report metrics', () => {
+  const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
+  const start=app.indexOf('function buildSavedCheckReportStats(');
+  const end=app.indexOf('\nfunction renderSavedReports()',start);
+  assert.notEqual(start,-1);
+  assert.notEqual(end,-1);
+  const context={};
+  vm.runInNewContext(
+    app.slice(start,end)+'\nthis.buildSavedCheckReportStats=buildSavedCheckReportStats;',
+    context
+  );
+  const saved=[
+    {id:'a',numbers:[1,2,3,4,5,6]},
+    {id:'b',numbers:[7,8,9,10,11,12]}
+  ];
+  const history=[
+    {id:'1',savedId:'a',round:1250,checkedAt:'2026-11-14T10:00:00Z',rank:'4등',matches:4},
+    {id:'2',savedId:'b',round:1250,checkedAt:'2026-11-14T11:00:00Z',rank:'1등',matches:6},
+    {id:'3',savedId:'a',round:1249,checkedAt:'2026-11-08T10:00:00Z',rank:'5등',matches:3},
+    {id:'4',savedId:'b',round:1248,checkedAt:'2026-11-01T10:00:00Z',rank:'낙첨',matches:1},
+    {id:'5',savedId:'unknown',round:1247,checkedAt:'2026-10-25T10:00:00Z',rank:'2등',matches:5}
+  ];
+  const report=context.buildSavedCheckReportStats(saved,history);
+  assert.equal(report.total,5);
+  assert.equal(report.top,2);
+  assert.equal(report.low,2);
+  assert.equal(report.last.id,'1');
+  assert.equal(report.rows[0].entry.id,'b');
+  assert.equal(report.rows[0].checks,2);
+  assert.equal(report.rows[0].wins,1);
+  assert.equal(report.rows[0].top3,1);
+  assert.equal(report.rows[0].avg,3.5);
+  assert.equal(report.rows[1].entry.id,'a');
+  assert.equal(report.rows[1].checks,2);
+  assert.equal(report.rows[1].avg,3.5);
+  assert.deepEqual(report.recentHistory.map(row=>row.id),['2','1','3','4','5']);
+});
+
+test('saved report keeps only 30 newest history rows while counting the entire history', () => {
+  const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
+  const start=app.indexOf('function buildSavedCheckReportStats(');
+  const end=app.indexOf('\nfunction renderSavedReports()',start);
+  const context={};
+  vm.runInNewContext(app.slice(start,end)+'\nthis.buildSavedCheckReportStats=buildSavedCheckReportStats;',context);
+  const history=Array.from({length:5000},(_,index)=>({
+    id:String(index),savedId:'a',round:index+1,
+    checkedAt:new Date(index*1000).toISOString(),rank:'낙첨',matches:index%7
+  }));
+  const report=context.buildSavedCheckReportStats([{id:'a'}],history);
+  assert.equal(report.total,5000);
+  assert.equal(report.recentHistory.length,30);
+  assert.equal(report.recentHistory[0].round,5000);
+  assert.equal(report.recentHistory.at(-1).round,4971);
+  assert.equal(report.rows[0].checks,5000);
+  assert.ok(report.rows[0].avg>=0 && report.rows[0].avg<=6);
+});
+
+test('saved report renderer uses pre-aggregated stats rather than filtering history per saved ticket', () => {
+  const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
+  const start=app.indexOf('function renderSavedReports() {');
+  const end=app.indexOf('\nfunction exportSavedCheckHistory()',start);
+  const renderer=app.slice(start,end);
+  assert.match(renderer,/buildSavedCheckReportStats\(saved,savedCheckHistory\)/);
+  assert.doesNotMatch(renderer,/savedCheckHistory\.filter\(/);
+});
+
