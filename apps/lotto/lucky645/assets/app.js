@@ -2039,15 +2039,23 @@ async function performCloudSync() {
   }));
   const deleted=new Set([...tombstoneMap.keys()]);
   const deletedSavedNumbers=deletedSavedNumberMap([...tombstoneMap.values()]);
-  const remoteActive=(remote||[]).filter(row=>{
-    if(row.deleted_at||deleted.has(row.category+':'+row.record_key)) return false;
-    if(row.category==='saved_combination'&&isSavedCombinationDeleted(row.payload,deletedSavedNumbers)) return false;
-    return true;
-  });
+  const remoteSavedRows=[];
+  const remoteHistoryRows=[];
+  let remoteState=null;
+  for(const row of Array.isArray(remote)?remote:[]) {
+    if(row.deleted_at||deleted.has(row.category+':'+row.record_key)) continue;
+    if(row.category==='saved_combination') {
+      if(!isSavedCombinationDeleted(row.payload,deletedSavedNumbers)) remoteSavedRows.push(row);
+    } else if(row.category==='check_history') {
+      remoteHistoryRows.push(row);
+    } else if(row.category==='auto_check_state'&&row.record_key==='default') {
+      remoteState=row.payload;
+    }
+  }
   const localSavedByNumbers=new Map(saved.map(item=>[item.numbers.join('-'),item]));
   const remoteSavedById=new Map();
 
-  remoteActive.filter(row=>row.category==='saved_combination').forEach(row=>{
+  remoteSavedRows.forEach(row=>{
     const item=normalizeSavedEntry(row.payload);
     if(!item)return;
     const key=item.numbers.join('-');
@@ -2069,7 +2077,7 @@ async function performCloudSync() {
   });
 
   const historyKeys=new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
-  remoteActive.filter(row=>row.category==='check_history').forEach(row=>{
+  remoteHistoryRows.forEach(row=>{
     const item=normalizeCloudHistoryRecord(row,remoteSavedById,localSavedByNumbers);
     if(!item)return;
     const key=`${Number(item.round)}:${String(item.savedId || item.id)}`;
@@ -2086,7 +2094,6 @@ async function performCloudSync() {
     }
   });
 
-  const remoteState=remoteActive.find(row=>row.category==='auto_check_state'&&row.record_key==='default')?.payload;
   const newestKnownRound=Number(draws.at(-1)?.round || latest?.round || 0);
   const remoteRound=Number(remoteState?.lastRound);
   if(remoteState&&Number.isSafeInteger(remoteRound)&&remoteRound>Number(autoCheckMeta.lastRound)&&newestKnownRound>0){
