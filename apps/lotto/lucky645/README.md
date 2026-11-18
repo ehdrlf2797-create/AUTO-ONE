@@ -54,9 +54,9 @@ Vercel 프로젝트의 Root Directory를 `apps/lotto/lucky645`로 설정하고 F
 
 - Supabase 프로젝트 `lucky645-cloud`는 2026-11-18 기준 `ACTIVE_HEALTHY` 상태입니다. `lucky645_sync_records` 테이블에는 RLS와 사용자 소유권 정책이 적용되어 있으며, `anon` 권한은 제거하고 `authenticated`에는 SELECT/INSERT/UPDATE/DELETE만 부여했습니다.
 - 데이터베이스 권한과 정책은 점검했지만, 실제 계정의 로그인·토큰 갱신·PC 간 동기화는 계정 소유자의 브라우저 테스트가 필요합니다.
-- 브라우저 세션 토큰은 현재 `localStorage`에 저장됩니다. 장기적으로 서버 측 HttpOnly 쿠키 세션 방식으로 개선해야 합니다.
+- 현재 앱은 브라우저 JavaScript가 Supabase Auth 토큰을 사용하며 세션은 `localStorage`에 저장됩니다. Supabase 브라우저 클라이언트의 기본 세션 저장 방식이며, refresh token은 한 번만 사용할 수 있어 동시 갱신 보호가 중요합니다.
 - Supabase 조직은 Free 요금제입니다. 유출 비밀번호 차단 기능은 Pro 이상에서 제공되므로 현재 경고가 남아 있습니다.
-- 기존 화면의 계정 토큰 저장 방식은 후속 보안 개선 대상입니다. 브라우저 localStorage에 세션 토큰을 보관하므로 XSS 방어, 서버 세션 전환, RLS 검증을 별도 작업해야 합니다.
+- HttpOnly 쿠키 전환은 단순 저장소 교체가 아닙니다. 현재 SPA 구조를 서버 중계형(BFF/API 중심)으로 바꾸고, 서버가 인증·세션 갱신·데이터 요청을 처리하도록 별도 설계와 구현이 필요합니다. 현재는 publishable key, 사용자별 RLS, 토큰 갱신 충돌 보호를 유지하고 XSS 방어와 실제 다중 기기 세션 테스트를 후속 점검합니다.
 - 판매점 전국 지도는 아직 이 모듈에 편입되지 않았습니다. 기존 UI가 제공하지 않는 데이터를 추정해 표시하지 않습니다.
 - 사이트 배포본의 Node 런타임 경고 `DEP0169 url.parse()`는 런타임 경고 로그에서 발견했지만, 현재 소스 일부가 배포 API에서 잘려 제공되어 발원 dependency까지 특정하지 못했습니다. 이 경고를 수정 완료로 표시하지 않습니다.
 ## Vercel 배포 연결 상태
