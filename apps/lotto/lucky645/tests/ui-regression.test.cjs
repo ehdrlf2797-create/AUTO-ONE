@@ -45,3 +45,25 @@ test('layout includes reduced-motion and compact-phone adaptations', () => {
 test('status updates are announced to assistive technology', () => {
   assert.match(html, /id="dataStatus"[^>]*role="status"[^>]*aria-live="polite"/);
 });
+
+test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
+  const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
+  const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
+  assert.equal(new Set(ids).size, ids.length, 'HTML IDs must be unique');
+  const idSet = new Set(ids);
+  const lookups = [...app.matchAll(/\$\(['"]([^'"]+)['"]\)/g)].map(match=>match[1]);
+  const missing = [...new Set(lookups.filter(id=>!idSet.has(id)))];
+  assert.deepEqual(missing, [], 'all literal app.js DOM lookups must exist in index.html');
+});
+
+test('static JavaScript uses an explicit cache-busting version', () => {
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=[^"]+"><\/script>/);
+});
+
+test('deployment adds clickjacking and cross-domain policy protection', () => {
+  const config = JSON.parse(fs.readFileSync(path.join(root,'vercel.json'),'utf8'));
+  const globalHeaders = config.headers.find(item=>item.source==='/(.*)')?.headers || [];
+  const values = Object.fromEntries(globalHeaders.map(item=>[item.key.toLowerCase(),item.value]));
+  assert.equal(values['x-frame-options'],'DENY');
+  assert.equal(values['x-permitted-cross-domain-policies'],'none');
+});
