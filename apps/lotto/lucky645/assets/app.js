@@ -272,32 +272,101 @@ function requestDrawNotifications() {
   Notification.requestPermission().then(permission=>toast(permission==='granted'?'브라우저 알림을 허용했습니다.':'알림 권한이 허용되지 않았습니다.')).catch(()=>toast('알림 권한 요청에 실패했습니다.'));
 }
 
-function runSavedBacktest() {
-  if (!saved.length) { $('savedBacktestOutput').innerHTML='<div class="empty">먼저 번호 조합을 보관함에 저장해 주세요.</div>'; return; }
-  if (!draws.length || !dataReady) { $('savedBacktestOutput').innerHTML='<div class="empty">전체 회차 데이터 연결이 완료된 뒤 실행할 수 있습니다.</div>'; return; }
-  const period=$('savedBacktestPeriod')?.value || 'year';
-  const rankCounts={'1등':0,'2등':0,'3등':0,'4등':0,'5등':0,'낙첨':0};
-  const byPeriod={}; const byMode={}; let gross=0, knownPrizeCount=0, checks=0;
-  for (const entry of saved) {
-    const mode=entry.mode || 'random'; if(!byMode[mode]) byMode[mode]={checks:0,win:0,top3:0};
-    for (const draw of draws) {
-      const result=compareNumbers(entry.numbers,draw); const rank=result.rank; rankCounts[rank]=(rankCounts[rank]||0)+1; checks++;
-      byMode[mode].checks++; if(rank!=='낙첨')byMode[mode].win++; if(['1등','2등','3등'].includes(rank))byMode[mode].top3++;
-      const key=period==='month' ? (draw.date?draw.date.slice(0,7):'날짜 없음') : (draw.date?draw.date.slice(0,4):'날짜 없음');
-      if(!byPeriod[key])byPeriod[key]={checks:0,win:0,top3:0};
-      byPeriod[key].checks++; if(rank!=='낙첨')byPeriod[key].win++; if(['1등','2등','3등'].includes(rank))byPeriod[key].top3++;
-      if(rank!=='낙첨') { const prize=draw.ranks?.find(item=>Number(item.rank)===Number(rank[0]))?.prize; if(Number.isFinite(prize)){gross+=prize;knownPrizeCount++;} }
-    }
-  }
-  const cost=checks*1000, profit=gross-cost;
-  savedBacktestResult={period,rankCounts,byPeriod,byMode,checks,cost,gross,profit,knownPrizeCount,drawCount:draws.length};
-  const periods=Object.entries(byPeriod).sort((a,b)=>a[0].localeCompare(b[0]));
-  const visible=period==='month'?periods.slice(-18):periods; const max=Math.max(1,...visible.map(([,v])=>v.win));
-  const modeRows=Object.entries(byMode).map(([mode,v])=>`<tr><td>${modeLabel(mode)}</td><td>${formatNumber(v.checks)}</td><td>${formatNumber(v.win)}</td><td>${formatNumber(v.top3)}</td></tr>`).join('');
-  $('savedBacktestOutput').className='';
-  $('savedBacktestOutput').innerHTML=`<div class="saved-insight-grid"><div class="saved-insight-card"><span>전체 비교</span><strong>${formatNumber(checks)}건</strong></div><div class="saved-insight-card"><span>가상 구매 비용</span><strong>${money(cost)}</strong></div><div class="saved-insight-card"><span>확인 가능한 상금 합계</span><strong>${money(gross)}</strong></div><div class="saved-insight-card"><span>가상 손익</span><strong>${money(profit)}</strong></div></div><div class="grid-2" style="margin-top:16px"><div><div class="panel-title" style="margin-bottom:10px">등수별 결과</div><div class="analytics-inline-bars">${Object.entries(rankCounts).map(([rank,count])=>`<div class="analytics-inline-row"><span>${rank}</span><div class="bar-track"><div class="bar-fill ${rank==='낙첨'?'cool':''}" style="width:${checks?count/checks*100:0}%"></div></div><strong>${formatNumber(count)}</strong></div>`).join('')}</div></div><div><div class="panel-title" style="margin-bottom:10px">${period==='month'?'월별':'연도별'} 당첨 결과</div><div class="saved-trend">${visible.map(([key,v])=>`<div class="saved-trend-row"><span>${escapeHtml(key)}</span><div class="bar-track"><div class="bar-fill" style="width:${v.win/max*100}%"></div></div><strong>${formatNumber(v.win)}</strong></div>`).join('')||'표시할 기간 데이터가 없습니다.'}</div></div></div><div class="panel-title" style="margin:18px 0 8px">추천 방식별 과거 비교</div><div class="table-wrap"><table class="saved-history-table"><thead><tr><th>추천 방식</th><th>비교</th><th>당첨</th><th>1~3등</th></tr></thead><tbody>${modeRows}</tbody></table></div><div class="analytics-mini" style="margin-top:12px">가상 구매 비용은 조합당 1,000원을 가정했습니다. 상금 데이터가 없는 회차/등수는 상금 합계에 포함되지 않습니다. 실제 과거 구매·당첨 이력이 아니며, 과거 결과는 향후 확률을 바꾸지 않습니다.</div>`;
+function selectBacktestDraws(history, range = 'all') {
+  if (!Array.isArray(history)) return [];
+  if (String(range) === 'all') return history.slice();
+  const count = Number(range);
+  if (!Number.isInteger(count) || count < 1) return history.slice();
+  return history.slice(-count);
 }
 
+function runSavedBacktest() {
+  const output = $('savedBacktestOutput');
+  if (!output) return null;
+  savedBacktestResult = null;
+  output.className = 'empty';
+  output.textContent = '백테스트 계산 중…';
+
+  if (!saved.length) {
+    output.textContent = '먼저 번호 조합을 보관함에 저장해 주세요.';
+    return null;
+  }
+  if (!draws.length || !dataReady) {
+    output.textContent = '전체 회차 데이터 연결이 완료된 뒤 실행할 수 있습니다.';
+    return null;
+  }
+
+  const period = $('savedBacktestPeriod')?.value || 'year';
+  const range = $('savedBacktestRange')?.value || 'all';
+  const selectedDraws = selectBacktestDraws(draws, range);
+  if (!selectedDraws.length) {
+    output.textContent = '선택한 범위에 비교할 회차 데이터가 없습니다.';
+    return null;
+  }
+
+  const rankCounts = {'1등':0,'2등':0,'3등':0,'4등':0,'5등':0,'낙첨':0};
+  const byPeriod = {};
+  const byMode = {};
+  let gross = 0, knownPrizeCount = 0, checks = 0;
+
+  for (const entry of saved) {
+    const mode = entry.mode || 'random';
+    if (!byMode[mode]) byMode[mode] = {checks:0,win:0,top3:0};
+    for (const draw of selectedDraws) {
+      const result = compareNumbers(entry.numbers, draw);
+      const rank = result.rank;
+      rankCounts[rank] = (rankCounts[rank] || 0) + 1;
+      checks++;
+      byMode[mode].checks++;
+      if (rank !== '낙첨') byMode[mode].win++;
+      if (['1등','2등','3등'].includes(rank)) byMode[mode].top3++;
+
+      const key = period === 'month'
+        ? (draw.date ? draw.date.slice(0,7) : '날짜 없음')
+        : (draw.date ? draw.date.slice(0,4) : '날짜 없음');
+      if (!byPeriod[key]) byPeriod[key] = {checks:0,win:0,top3:0};
+      byPeriod[key].checks++;
+      if (rank !== '낙첨') byPeriod[key].win++;
+      if (['1등','2등','3등'].includes(rank)) byPeriod[key].top3++;
+
+      if (rank !== '낙첨') {
+        const prize = draw.ranks?.find(item => Number(item.rank) === Number(rank[0]))?.prize;
+        if (Number.isFinite(prize)) {
+          gross += prize;
+          knownPrizeCount++;
+        }
+      }
+    }
+  }
+
+  const cost = checks * 1000;
+  const profit = gross - cost;
+  const runAt = new Date().toISOString();
+  savedBacktestResult = {
+    period, range, rankCounts, byPeriod, byMode, checks, cost, gross, profit,
+    knownPrizeCount, drawCount:selectedDraws.length,
+    fromRound:selectedDraws[0].round,
+    toRound:selectedDraws[selectedDraws.length - 1].round,
+    runAt
+  };
+
+  const periods = Object.entries(byPeriod).sort((a,b) => a[0].localeCompare(b[0]));
+  const visible = period === 'month' ? periods.slice(-18) : periods;
+  const max = Math.max(1, ...visible.map(([,value]) => value.win));
+  const modeRows = Object.entries(byMode).map(([mode,value]) =>
+    `<tr><td>${modeLabel(mode)}</td><td>${formatNumber(value.checks)}</td><td>${formatNumber(value.win)}</td><td>${formatNumber(value.top3)}</td></tr>`
+  ).join('');
+  const rangeLabel = range === 'all' ? '전체 확보 회차' : `최근 ${formatNumber(selectedDraws.length)}회`;
+
+  output.className = '';
+  output.innerHTML =
+    `<div class="analytics-mini" style="margin-bottom:12px">분석 기준: <strong>${rangeLabel}</strong> · ${savedBacktestResult.fromRound}~${savedBacktestResult.toRound}회 · ${formatNumber(selectedDraws.length)}회차 · ${formatNumber(saved.length)}개 조합 · 계산 시각 ${escapeHtml(formatSyncTime(runAt))}</div>` +
+    `<div class="saved-insight-grid"><div class="saved-insight-card"><span>전체 비교</span><strong>${formatNumber(checks)}건</strong></div><div class="saved-insight-card"><span>가상 구매 비용</span><strong>${money(cost)}</strong></div><div class="saved-insight-card"><span>확인 가능한 상금 합계</span><strong>${money(gross)}</strong></div><div class="saved-insight-card"><span>가상 손익</span><strong>${money(profit)}</strong></div></div>` +
+    `<div class="grid-2" style="margin-top:16px"><div><div class="panel-title" style="margin-bottom:10px">등수별 결과</div><div class="analytics-inline-bars">${Object.entries(rankCounts).map(([rank,count])=>`<div class="analytics-inline-row"><span>${rank}</span><div class="bar-track"><div class="bar-fill ${rank==='낙첨'?'cool':''}" style="width:${checks?count/checks*100:0}%"></div></div><strong>${formatNumber(count)}</strong></div>`).join('')}</div></div><div><div class="panel-title" style="margin-bottom:10px">${period==='month'?'월별':'연도별'} 당첨 결과</div><div class="saved-trend">${visible.map(([key,value])=>`<div class="saved-trend-row"><span>${escapeHtml(key)}</span><div class="bar-track"><div class="bar-fill" style="width:${value.win/max*100}%"></div></div><strong>${formatNumber(value.win)}</strong></div>`).join('')||'표시할 기간 데이터가 없습니다.'}</div></div></div>` +
+    `<div class="panel-title" style="margin:18px 0 8px">추천 방식별 과거 비교</div><div class="table-wrap"><table class="saved-history-table"><thead><tr><th>추천 방식</th><th>비교</th><th>당첨</th><th>1~3등</th></tr></thead><tbody>${modeRows}</tbody></table></div>` +
+    `<div class="analytics-mini" style="margin-top:12px">가상 구매 비용은 조합당 1,000원을 가정했습니다. 상금 데이터가 없는 회차/등수는 상금 합계에 포함되지 않습니다. 실제 과거 구매·당첨 이력이 아니며, 과거 결과는 향후 확률을 바꾸지 않습니다.</div>`;
+  return savedBacktestResult;
+}
 function loadSyncMeta() {
   try {
     const value = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}');
@@ -335,6 +404,7 @@ function persistSaved() {
   renderSaved();
   updateTopStats();
   if (!cloudApplying) scheduleCloudSync();
+  if (savedBacktestResult) runSavedBacktest();
 }
 
 function persistDraws() {
@@ -672,6 +742,7 @@ async function refreshData(showToast = true) {
     updateTopStats();
     renderSavedReports();
     autoCheckLatestDraw();
+    if (savedBacktestResult) runSavedBacktest();
     $('historySummary').textContent = dataReady
       ? `1회부터 ${newestAvailable.round}회까지 누적 ${draws.length.toLocaleString()}회 · 최신 ${latest.round}회`
       : `현재 확보한 ${draws.length.toLocaleString()}회 데이터 · 전체 회차 누락 여부를 확인할 수 없습니다.`;
@@ -957,13 +1028,35 @@ function simulateCombinations(count, rng=Math.random) {
   return {attempts,totalSum,averageSum:totalSum/attempts,averageOdd:totalOdd/attempts,numberCounts,oddDistribution,sumBins};
 }
 
-function runPortfolioSimulation() {
+async function runPortfolioSimulation() {
+  const button = $('runPortfolioSimulationBtn');
+  const output = $('portfolioSimulationOutput');
+  const countInput = $('portfolioSimulationCount');
+  if (!output) return null;
+
+  const originalLabel = button?.textContent || '포트폴리오 실험 실행';
+  if (button) {
+    button.disabled = true;
+    button.textContent = '실험 준비 중…';
+  }
+  output.className = 'empty';
+  output.textContent = '실험 환경을 준비하고 있습니다. 잠시만 기다려 주세요.';
+
   try {
-    const result = simulatePortfolioStrategies(Number($('portfolioSimulationCount').value));
-    const random = result.random, coverage = result.coverage;
+    // 먼저 화면을 갱신해 사용자가 클릭 결과를 바로 확인하게 합니다.
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    const startedAt = Date.now();
+    const attempts = Number(countInput?.value || 5000);
+    // 몬테카를로 실험은 보안 토큰이 아니므로 고속 표준 난수를 사용합니다.
+    const result = await simulatePortfolioStrategiesAsync(attempts, Math.random, (completed,total) => {
+      output.textContent = `포트폴리오 실험 진행 중… ${formatNumber(completed)} / ${formatNumber(total)}회`;
+    });
+    const elapsedMs = Date.now() - startedAt;
+    const random = result.random;
+    const coverage = result.coverage;
     const pct = value => (value * 100).toFixed(2) + '%';
     const ratio = 1 / result.jackpotProbability;
-    const output = $('portfolioSimulationOutput');
+
     output.className = '';
     output.innerHTML =
       '<div class="analytics-result-grid">' +
@@ -978,17 +1071,21 @@ function runPortfolioSimulation() {
         '<tr><td>5개 이상 일치 조합 존재</td><td>' + pct(random.any5) + '</td><td>' + pct(coverage.any5) + '</td></tr>' +
         '<tr><td>1등 정확 일치</td><td>약 1 / ' + formatNumber(Math.round(ratio)) + '</td><td>약 1 / ' + formatNumber(Math.round(ratio)) + '</td></tr>' +
       '</tbody></table></div>' +
-      '<div class="notice" style="margin-top:14px"><strong>해석:</strong> 커버리지 분산은 45개 번호를 넓게 사용하는 방식입니다. 3~5개 일치율은 이번 실험에서 관측한 값이며 회차·표본에 따라 흔들립니다. 서로 다른 10개 조합의 1등 확률은 두 방식 모두 10 / 8,145,060, 즉 약 1 / ' + formatNumber(Math.round(ratio)) + '로 같습니다.</div>' +
-      '<div class="analytics-mini" style="margin-top:10px">각 실험은 새 당첨번호 6개를 균등 무작위로 추첨해 두 포트폴리오를 비교합니다. 과거 빈도나 미출현 번호를 미래 예측에 사용하지 않습니다.</div>';
+      '<div class="notice" style="margin-top:14px"><strong>해석:</strong> 커버리지 분산은 45개 번호를 넓게 사용하는 방식입니다. 3~5개 일치율은 이번 실험에서 관측한 값이며 회차·표본에 따라 흔들립니다. 서로 다른 10개 조합의 1등 확률은 두 방식 모두 같으며, 약 1 / ' + formatNumber(Math.round(ratio)) + '입니다.</div>' +
+      '<div class="analytics-mini" style="margin-top:10px">실험은 매번 새 당첨번호 6개를 균등 무작위 추첨해 두 포트폴리오를 비교했습니다. 소요 시간 ' + (elapsedMs / 1000).toFixed(2) + '초 · 과거 빈도나 미출현 번호를 미래 예측에 사용하지 않습니다.</div>';
     toast(formatNumber(result.attempts) + '회 포트폴리오 실험을 완료했습니다.');
     return result;
   } catch (error) {
-    $('portfolioSimulationOutput').className = 'empty';
-    $('portfolioSimulationOutput').textContent = error.message;
+    output.className = 'empty';
+    output.textContent = error?.message || '포트폴리오 실험 중 알 수 없는 오류가 발생했습니다.';
     return null;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
   }
 }
-
 function runAnalyticsSimulation() {
   try {
     const result=simulateCombinations(Number($('simulationCount').value));
@@ -1366,37 +1463,76 @@ function evaluateTicketPortfolio(portfolio, drawNumbers) {
   return {coverage:covered.size,maxExposure:Math.max(...exposure.slice(1)),any3,any4,any5,any6};
 }
 
-function simulatePortfolioStrategies(count, rng = randomUnit) {
+function createPortfolioSimulationState(count) {
   const attempts = Number(count);
   if (![1000,5000,10000].includes(attempts)) {
     throw new Error('실험 횟수는 1,000 / 5,000 / 10,000 중 선택해 주세요.');
   }
-  const ticketCount = 10;
-  const result = {
-    attempts,ticketCount,jackpotProbability:ticketCount/8145060,
+  return {
+    attempts,
+    completed:0,
+    ticketCount:10,
+    jackpotProbability:10/8145060,
     random:{coverage:0,maxExposure:0,any3:0,any4:0,any5:0,any6:0},
     coverage:{coverage:0,maxExposure:0,any3:0,any4:0,any5:0,any6:0}
   };
-  for (let run=0; run<attempts; run++) {
+}
+
+function simulatePortfolioBatch(state, batchSize, rng) {
+  const end = Math.min(state.attempts, state.completed + batchSize);
+  while (state.completed < end) {
     const draw = createRandomPortfolio(1,rng)[0];
-    const randomPortfolio = createRandomPortfolio(ticketCount,rng);
-    const coveragePortfolio = createCoveragePortfolio(ticketCount,[],rng);
+    const randomPortfolio = createRandomPortfolio(state.ticketCount,rng);
+    const coveragePortfolio = createCoveragePortfolio(state.ticketCount,[],rng);
+
     for (const [name,portfolio] of [['random',randomPortfolio],['coverage',coveragePortfolio]]) {
       const score = evaluateTicketPortfolio(portfolio,draw);
-      result[name].coverage += score.coverage;
-      result[name].maxExposure += score.maxExposure;
-      result[name].any3 += score.any3 ? 1 : 0;
-      result[name].any4 += score.any4 ? 1 : 0;
-      result[name].any5 += score.any5 ? 1 : 0;
-      result[name].any6 += score.any6 ? 1 : 0;
+      state[name].coverage += score.coverage;
+      state[name].maxExposure += score.maxExposure;
+      state[name].any3 += score.any3 ? 1 : 0;
+      state[name].any4 += score.any4 ? 1 : 0;
+      state[name].any5 += score.any5 ? 1 : 0;
+      state[name].any6 += score.any6 ? 1 : 0;
     }
+    state.completed++;
   }
+  return state;
+}
+
+function finalizePortfolioSimulation(state) {
+  const result = {
+    attempts:state.attempts,
+    ticketCount:state.ticketCount,
+    jackpotProbability:state.jackpotProbability,
+    random:{...state.random},
+    coverage:{...state.coverage}
+  };
   for (const name of ['random','coverage']) {
-    for (const key of ['coverage','maxExposure','any3','any4','any5','any6']) result[name][key] /= attempts;
+    for (const key of ['coverage','maxExposure','any3','any4','any5','any6']) {
+      result[name][key] /= state.attempts;
+    }
   }
   return result;
 }
 
+function simulatePortfolioStrategies(count, rng = Math.random) {
+  const state = createPortfolioSimulationState(count);
+  simulatePortfolioBatch(state,state.attempts,rng);
+  return finalizePortfolioSimulation(state);
+}
+
+async function simulatePortfolioStrategiesAsync(count, rng = Math.random, onProgress = () => {}) {
+  const state = createPortfolioSimulationState(count);
+  const batchSize = 250;
+  while (state.completed < state.attempts) {
+    simulatePortfolioBatch(state,batchSize,rng);
+    onProgress(state.completed,state.attempts);
+    if (state.completed < state.attempts) {
+      await new Promise(resolve => window.setTimeout(resolve,0));
+    }
+  }
+  return finalizePortfolioSimulation(state);
+}
 function renderGenerated() {
   $('resultCount').textContent = `${generated.length} 조합`;
   if (!generated.length) {
@@ -1780,6 +1916,7 @@ function bindEvents() {
   $('requestDrawNotificationsBtn').addEventListener('click',requestDrawNotifications);
   $('runSavedBacktestBtn').addEventListener('click',runSavedBacktest);
   $('savedBacktestPeriod').addEventListener('change',()=>{ if(savedBacktestResult) runSavedBacktest(); });
+  $('savedBacktestRange').addEventListener('change',()=>{ if(savedBacktestResult) runSavedBacktest(); });
   $('savedImportFile').addEventListener('change',event=>{const file=event.target.files?.[0];importSavedBackup(file);event.target.value='';});
   $('savedList').addEventListener('click',event=>{
     const remove=event.target.closest('[data-delete-saved]');
