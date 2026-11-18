@@ -949,7 +949,7 @@ function renderLatest() {
 function loadResearchReport() {
   try {
     const value = JSON.parse(localStorage.getItem(RESEARCH_REPORT_KEY) || 'null');
-    return value && value.version === 1 && Array.isArray(value.evaluation?.strategies) ? value : null;
+    return value && value.version >= 1 && Array.isArray(value.evaluation?.strategies) ? value : null;
   } catch (_) { return null; }
 }
 
