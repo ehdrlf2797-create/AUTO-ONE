@@ -152,7 +152,7 @@
     return matches;
   }
 
-  function evaluateStrategies(draws, strategies, onProgress) {
+  async function evaluateStrategies(draws, strategies, onProgress) {
     const { prefix, lastSeen } = buildPrefixData(draws);
     const testStart = Math.max(100, Math.floor(draws.length * 0.8));
     const testCount = draws.length - testStart;
@@ -208,6 +208,7 @@
         verdict: adjustedSignificance ? 'candidate' : 'not_verified'
       });
       if (typeof onProgress === 'function') onProgress(strategyIndex + 1, strategies.length);
+      if (strategyIndex < strategies.length - 1) await new Promise((resolve) => root.setTimeout(resolve, 0));
     }
     results.sort((a, b) => b.averageMatches - a.averageMatches || b.hit3Rate - a.hit3Rate || a.id.localeCompare(b.id));
     return {
@@ -304,7 +305,7 @@
     if (strategyCount !== 100) throw new Error('현재 연구 프로토콜은 100개 전략 비교로 고정되어 있습니다.');
     if (attempts !== 1000000) throw new Error('현재 연구 프로토콜은 1,000,000회 시뮬레이션으로 고정되어 있습니다.');
     const strategies = generateStrategies();
-    const evaluation = evaluateStrategies(draws, strategies, (done, total) => {
+    const evaluation = await evaluateStrategies(draws, strategies, (done, total) => {
       if (typeof onProgress === 'function') onProgress({ stage: 'strategies', completed: done, total });
     });
     const monteCarlo = await runMonteCarlo(attempts, [1, 2, 3, 4, 5, 6], (done, total) => {
