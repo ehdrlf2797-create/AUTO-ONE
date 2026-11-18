@@ -9,8 +9,9 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'assets/app.css'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
 
-test('all seven app sections are reachable from the mobile navigation', () => {
+test('all eight app sections are reachable from the mobile navigation', () => {
   const navStart = html.indexOf('<nav class="mobile-nav"');
   assert.notEqual(navStart, -1, 'mobile navigation must exist');
   const navEnd = html.indexOf('</nav>', navStart);
@@ -58,7 +59,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-simulation-studio-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261119-predict-bulk-save-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -147,4 +148,18 @@ test('dedicated simulation page exposes run, graph, result storage, and number-c
   assert.match(html, /id="saveSimulationTicketsBtn"/);
   assert.match(css, /\.simulation-frequency-grid/);
   assert.match(css, /\.simulation-expected-marker/);
+});
+
+
+test('generator page supports one-click bulk save and displays deduplicated odds summary', () => {
+  assert.match(html, /id="saveAllResultsBtn"[^>]*disabled/);
+  assert.match(html, /id="generatedSummary"/);
+  assert.match(html, /id="results"/);
+  assert.match(app, /function saveAllGenerated\(\)/);
+  assert.match(app, /buildBulkSavedEntries\(generated,saved,generatedMode\)/);
+  assert.match(app, /function summarizeGeneratedTickets\(tickets, savedEntries = \[\]\)/);
+  assert.match(app, /TOTAL_LOTTO_COMBINATIONS = 8145060/);
+  assert.match(app, /if\(!persistSaved\(\[\.\.\.prepared\.entries,\.\.\.saved\]\)\) return false/);
+  assert.match(css, /\.generator-summary/);
+  assert.match(css, /\.generator-result-actions/);
 });

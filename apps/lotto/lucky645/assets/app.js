@@ -51,6 +51,7 @@ let latestVerification = 'pending';
 let dataReady = false;
 let activeMode = 'random';
 let generated = [];
+let generatedMode = 'random';
 let includeNums = [];
 let excludeNums = [];
 let manualNums = [];
@@ -530,12 +531,20 @@ function loadCachedDraws() {
   } catch (_) { return []; }
 }
 
-function persistSaved() {
-  try { localStorage.setItem(SAVED_KEY, JSON.stringify(saved)); } catch (_) {}
+function persistSaved(nextSaved = saved) {
+  const next = Array.isArray(nextSaved) ? nextSaved : saved;
+  try {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(next));
+  } catch (_) {
+    toast('번호 보관함 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.');
+    return false;
+  }
+  if (next !== saved) saved = next;
   renderSaved();
   updateTopStats();
   if (!cloudApplying) scheduleCloudSync();
   if (savedBacktestResult) runSavedBacktest();
+  return true;
 }
 
 function persistDraws() {
@@ -2049,17 +2058,136 @@ async function simulatePortfolioStrategiesAsync(count, rng = Math.random, onProg
   }
   return finalizePortfolioSimulation(state);
 }
-function renderGenerated() {
-  $('resultCount').textContent = `${generated.length} 조합`;
-  if (!generated.length) {
-    $('results').className='empty';
-    $('results').innerHTML='아직 생성된 조합이 없습니다.<br>왼쪽에서 방식을 선택하고 생성 버튼을 눌러주세요.';
-    return;
-  }
-  $('results').className='result-list';
-  $('results').innerHTML=generated.map((numbers,index)=>`<div class="result-row"><div class="result-left"><span class="result-index">${String(index+1).padStart(2,'0')}</span><div class="result-balls">${numbers.map(n=>ball(n,true)).join('')}</div></div><div class="result-actions"><button class="mini-btn" data-save-result="${index}">저장</button><button class="mini-btn" data-copy-result="${index}">복사</button></div></div>`).join('');
+
+const TOTAL_LOTTO_COMBINATIONS = 8145060;
+
+function validCombinationKey(numbers) {
+  if (!Array.isArray(numbers) || numbers.length !== 6 ||
+      numbers.some(number => !Number.isInteger(number) || number < 1 || number > 45) ||
+      new Set(numbers).size !== 6) return null;
+  return [...numbers].sort((a,b)=>a-b).join('-');
 }
 
+function summarizeGeneratedTickets(tickets, savedEntries = []) {
+  const keys = new Set();
+  const numberSet = new Set();
+  let invalidCount = 0;
+  let duplicateCount = 0;
+  let alreadySavedCount = 0;
+  const savedKeys = new Set();
+  for (const entry of Array.isArray(savedEntries) ? savedEntries : []) {
+    const key = validCombinationKey(Array.isArray(entry) ? entry : entry?.numbers);
+    if (key) savedKeys.add(key);
+  }
+  for (const ticket of Array.isArray(tickets) ? tickets : []) {
+    const key = validCombinationKey(ticket);
+    if (!key) {
+      invalidCount++;
+      continue;
+    }
+    if (keys.has(key)) {
+      duplicateCount++;
+      continue;
+    }
+    keys.add(key);
+    ticket.forEach(number=>numberSet.add(number));
+    if (savedKeys.has(key)) alreadySavedCount++;
+  }
+  const uniqueCount=keys.size;
+  return {
+    totalCount:Array.isArray(tickets)?tickets.length:0,
+    validCount:uniqueCount,
+    uniqueCount,
+    duplicateCount,
+    invalidCount,
+    alreadySavedCount,
+    newCount:uniqueCount-alreadySavedCount,
+    uniqueNumbers:numberSet.size,
+    jackpotProbability:uniqueCount/TOTAL_LOTTO_COMBINATIONS,
+    jackpotPercent:uniqueCount/TOTAL_LOTTO_COMBINATIONS*100,
+    oneIn:uniqueCount?Math.round(TOTAL_LOTTO_COMBINATIONS/uniqueCount):null
+  };
+}
+
+function buildBulkSavedEntries(tickets, existingEntries, mode, now = new Date(), idFactory = Math.random) {
+  const existingKeys=new Set();
+  for(const entry of Array.isArray(existingEntries)?existingEntries:[]){
+    const key=validCombinationKey(Array.isArray(entry)?entry:entry?.numbers);
+    if(key) existingKeys.add(key);
+  }
+  const seen=new Set(existingKeys);
+  const entries=[];
+  let duplicateCount=0;
+  let invalidCount=0;
+  const createdAt=now.toISOString();
+  const date=now.toLocaleDateString('ko-KR');
+  for(const ticket of Array.isArray(tickets)?tickets:[]){
+    const key=validCombinationKey(ticket);
+    if(!key){invalidCount++;continue;}
+    if(seen.has(key)){duplicateCount++;continue;}
+    seen.add(key);
+    entries.push({
+      id:'bulk-'+now.getTime()+'-'+entries.length+'-'+idFactory().toString(16).slice(2),
+      numbers:key.split('-').map(Number),
+      mode:['random','balanced','stats','hybrid','custom','coverage'].includes(mode)?mode:'random',
+      date,
+      favorite:false,
+      syncUpdatedAt:createdAt
+    });
+  }
+  return {entries,added:entries.length,duplicateCount,invalidCount};
+}
+
+function ensureSavedAutoCheckBaseline() {
+  if (!autoCheckMeta.lastRound && dataReady && latestVerification === 'official' && Number(latest?.round)>0) {
+    autoCheckMeta.lastRound = Number(latest.round);
+    autoCheckMeta.lastCheckedAt = new Date().toISOString();
+    autoCheckMeta.lastStatus = '첫 저장 시점 기준 회차 설정';
+    persistAutoCheckMeta();
+  }
+}
+
+function renderGenerated() {
+  const summary=summarizeGeneratedTickets(generated,saved);
+  $('resultCount').textContent = String(summary.validCount)+' 조합';
+  const saveAllButton=$('saveAllResultsBtn');
+  if(saveAllButton){
+    saveAllButton.textContent='전체 저장 ('+summary.newCount+')';
+    saveAllButton.disabled=summary.newCount===0;
+    saveAllButton.title=summary.newCount
+      ? '새로 저장할 '+summary.newCount+'개 조합을 한 번에 보관합니다.'
+      : '새로 저장할 조합이 없습니다.';
+  }
+  const summaryPanel=$('generatedSummary');
+  if(!generated.length){
+    $('results').className='empty';
+    $('results').innerHTML='아직 생성된 조합이 없습니다.<br>왼쪽에서 방식을 선택하고 생성 버튼을 눌러주세요.';
+    if(summaryPanel){
+      summaryPanel.className='generator-summary empty';
+      summaryPanel.textContent='조합을 생성하면 중복 여부, 번호 사용 범위와 이번 조합의 1등 확률을 계산합니다.';
+    }
+    return;
+  }
+  if(summaryPanel){
+    summaryPanel.className='generator-summary';
+    const probability=summary.uniqueCount
+      ? String(summary.uniqueCount.toLocaleString('ko-KR'))+' / '+TOTAL_LOTTO_COMBINATIONS.toLocaleString('ko-KR')+' (약 1 / '+summary.oneIn.toLocaleString('ko-KR')+')'
+      : '계산할 수 있는 유효 조합이 없습니다.';
+    summaryPanel.innerHTML=
+      '<div class="generator-metric"><span>서로 다른 조합</span><strong>'+summary.uniqueCount+'개</strong></div>'+
+      '<div class="generator-metric"><span>번호 사용 범위</span><strong>'+summary.uniqueNumbers+' / 45개</strong></div>'+
+      '<div class="generator-metric"><span>중복 조합</span><strong>'+summary.duplicateCount+'개</strong></div>'+
+      '<div class="generator-metric generator-odds"><span>이번 조합 묶음의 1등 확률</span><strong>'+probability+'</strong><small>'+summary.jackpotPercent.toFixed(8)+'% · 한 회차 기준</small></div>'+
+      '<div class="generator-summary-note">이미 보관함에 있는 조합 '+summary.alreadySavedCount+'개 · 새로 저장할 조합 '+summary.newCount+'개. 번호별 예측 방식이 이 확률을 높여주지는 않습니다.</div>';
+  }
+  const savedKeys=new Set(saved.map(entry=>validCombinationKey(entry?.numbers)).filter(Boolean));
+  $('results').className='result-list';
+  $('results').innerHTML=generated.map((numbers,index)=>{
+    const key=validCombinationKey(numbers);
+    const isSaved=Boolean(key&&savedKeys.has(key));
+    return '<div class="result-row"><div class="result-left"><span class="result-index">'+String(index+1).padStart(2,'0')+'</span><div class="result-balls">'+numbers.map(n=>ball(n,true)).join('')+'</div></div><div class="result-actions"><button class="mini-btn" data-save-result="'+index+'" '+(isSaved?'disabled':'')+'>'+(isSaved?'저장됨':'저장')+'</button><button class="mini-btn" data-copy-result="'+index+'">복사</button></div></div>';
+  }).join('');
+}
 function generateNumbers() {
   const quantity=Number($('quantity').value||3);
   const level=$('balanceLevel').value;
@@ -2088,6 +2216,7 @@ function generateNumbers() {
     return;
   }
   generated=next;
+  generatedMode=activeMode;
   renderGenerated();
   if (generated.length<quantity) toast(`${generated.length}개 조합을 만들었습니다. 조건을 만족하는 서로 다른 조합이 부족합니다.`);
   else if (activeMode==='stats') { const count=drawsForStatsWeighting().length; toast(`${count}회 데이터의 출현 빈도를 약하게 반영했습니다. 당첨 확률은 동일합니다.`); }
@@ -2096,21 +2225,48 @@ function generateNumbers() {
 }
 
 function saveCombination(numbers,mode=activeMode) {
-  if (!Array.isArray(numbers) || numbers.length!==6 || new Set(numbers).size!==6 || numbers.some(n=>!Number.isInteger(n)||n<1||n>45)) return toast('저장할 번호 조합이 올바르지 않습니다.');
-  const key=numbers.join('-');
-  if (saved.some(entry=>Array.isArray(entry.numbers) && entry.numbers.join('-')===key)) return toast('이미 보관함에 저장된 조합입니다.');
-  saved.unshift({id:`${Date.now()}-${Math.random().toString(16).slice(2)}`,numbers:sortNums(numbers),mode,date:new Date().toLocaleDateString('ko-KR'),favorite:false,syncUpdatedAt:new Date().toISOString()});
-  if (!autoCheckMeta.lastRound && dataReady && latestVerification === 'official' && Number(latest?.round)>0) {
-    autoCheckMeta.lastRound = Number(latest.round);
-    autoCheckMeta.lastCheckedAt = new Date().toISOString();
-    autoCheckMeta.lastStatus = '첫 저장 시점 기준 회차 설정';
-    persistAutoCheckMeta();
+  const key=validCombinationKey(numbers);
+  if(!key) return toast('저장할 번호 조합이 올바르지 않습니다.');
+  if(saved.some(entry=>validCombinationKey(entry.numbers)===key)) {
+    toast('이미 보관함에 저장된 조합입니다.');
+    renderGenerated();
+    return false;
   }
-  persistSaved();
+  const now=new Date();
+  const entry={
+    id:String(now.getTime())+'-'+Math.random().toString(16).slice(2),
+    numbers:key.split('-').map(Number),
+    mode,
+    date:now.toLocaleDateString('ko-KR'),
+    favorite:false,
+    syncUpdatedAt:now.toISOString()
+  };
+  if(!persistSaved([entry,...saved])) return false;
+  ensureSavedAutoCheckBaseline();
   renderSavedReports();
+  renderGenerated();
   toast('번호를 보관함에 저장했습니다.');
+  return true;
 }
 
+function saveAllGenerated() {
+  if(!generated.length) return toast('먼저 번호 조합을 생성해 주세요.');
+  const prepared=buildBulkSavedEntries(generated,saved,generatedMode);
+  if(!prepared.added){
+    renderGenerated();
+    if(prepared.duplicateCount||prepared.invalidCount) {
+      toast('새로 저장할 조합이 없습니다. 중복 '+prepared.duplicateCount+'개, 잘못된 조합 '+prepared.invalidCount+'개');
+    } else toast('새로 저장할 조합이 없습니다.');
+    return false;
+  }
+  // 한 번의 localStorage 쓰기로 전체 저장합니다. 실패하면 saved 메모리 상태도 바꾸지 않습니다.
+  if(!persistSaved([...prepared.entries,...saved])) return false;
+  ensureSavedAutoCheckBaseline();
+  renderSavedReports();
+  renderGenerated();
+  toast('전체 저장 완료: '+prepared.added+'개 저장, 중복 '+prepared.duplicateCount+'개 건너뜀');
+  return true;
+}
 async function copyNumbers(numbers) {
   const text=numbers.join(', ');
   try { await navigator.clipboard.writeText(text); toast('번호를 클립보드에 복사했습니다.'); }
@@ -2558,6 +2714,7 @@ function bindEvents() {
     navigate('generator');
   });
   $('generateBtn').addEventListener('click',generateNumbers);
+  $('saveAllResultsBtn').addEventListener('click',saveAllGenerated);
   $('statsWeightPeriod').addEventListener('change',event=>{statsWeightPeriod=event.target.value; const count=drawsForStatsWeighting().length; $('statsWeightControl').querySelector('.field-help').textContent=`현재 확보한 ${count}회 자료에서 출현 빈도를 약하게 반영합니다. 당첨 확률이 높아지는 것은 아닙니다.`;});
   $('refreshBtn').addEventListener('click',()=>refreshData(true));
   $('loadRoundBtn').addEventListener('click',checkRound);
@@ -2584,7 +2741,7 @@ function bindEvents() {
   $('results').addEventListener('click',event=>{
     const save=event.target.closest('[data-save-result]');
     const copy=event.target.closest('[data-copy-result]');
-    if (save) saveCombination(generated[Number(save.dataset.saveResult)]);
+    if (save) saveCombination(generated[Number(save.dataset.saveResult)],generatedMode);
     if (copy) copyNumbers(generated[Number(copy.dataset.copyResult)]);
   });
   document.querySelectorAll('[data-saved-filter]').forEach(button=>button.addEventListener('click',()=>{savedFilter=button.dataset.savedFilter;renderSaved();}));
