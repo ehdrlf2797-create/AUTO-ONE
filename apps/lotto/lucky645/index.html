@@ -137,9 +137,9 @@
     <div class="panel research-run-panel" style="margin-bottom:18px">
       <div class="panel-head"><div><div class="panel-title">① 전체 데이터 연구 실행</div><div class="panel-desc">학습 구간과 마지막 20% 검증 구간을 시간순으로 분리합니다. 전략은 검증 구간의 미래 번호를 볼 수 없습니다.</div></div><span class="badge yellow" id="researchDataStatus">데이터 확인 중</span></div>
       <div class="research-config-grid"><div class="research-config"><span>데이터 범위</span><strong>전체 연속 회차</strong></div><div class="research-config"><span>전략 비교</span><strong>100개 전략</strong></div><div class="research-config"><span>몬테카를로</span><strong>1,000,000회</strong></div><div class="research-config"><span>가설 등록</span><strong>검증 통과 시 후보 등록</strong></div></div>
-      <button class="primary" id="runResearchBtn" style="width:100%;margin-top:16px" disabled>⚗ 전체 연구 시작</button>
+      <button class="primary" id="runResearchBtn" style="width:100%;margin-top:16px" aria-busy="false">⚗ 전체 연구 시작</button>
       <div id="researchProgressWrap" style="display:none;margin-top:15px"><div class="split"><span id="researchProgressLabel" class="small-label">연구 준비 중</span><strong id="researchProgressPct">0%</strong></div><div class="research-progress-track"><div id="researchProgressBar" class="research-progress-fill" style="width:0%"></div></div></div>
-      <div id="researchRunMessage" class="notice" style="margin-top:14px">데이터 연결이 완료되면 연구를 실행할 수 있습니다. 결과는 이 브라우저에 저장되며, 저장된 전략 후보는 실제 번호 추천에 자동 적용되지 않습니다.</div>
+      <div id="researchRunMessage" class="notice research-run-message" role="status" aria-live="polite" style="margin-top:14px">데이터 연결이 완료되면 연구를 실행할 수 있습니다. 결과는 이 브라우저에 저장되며, 저장된 전략 후보는 실제 번호 추천에 자동 적용되지 않습니다.</div>
     </div>
     <div class="grid-2 research-output-grid">
       <div class="panel"><div class="panel-head"><div><div class="panel-title">② 전략 검증 결과</div><div class="panel-desc">평균 일치 개수와 무작위 기준선의 차이를 비교합니다.</div></div><span class="badge" id="researchStrategySummary">아직 실행 전</span></div><div id="researchStrategyResults" class="empty">연구 실행 후 100개 전략의 성능 순위를 표시합니다.</div></div>
