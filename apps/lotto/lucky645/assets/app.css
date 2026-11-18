@@ -383,3 +383,12 @@ td{color:#e0e8f0}
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+
+/* Probability-aware ticket portfolio controls */
+#portfolioSimulationOutput .analytics-result-card strong{font-variant-numeric:tabular-nums}
+#portfolioSimulationOutput .notice{line-height:1.75}
+@media(max-width:760px){
+  #portfolioSimulationOutput .table-wrap{margin-left:-2px;margin-right:-2px}
+  #portfolioSimulationOutput .analytics-table{min-width:420px}
+}
