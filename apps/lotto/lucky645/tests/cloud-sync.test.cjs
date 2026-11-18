@@ -327,3 +327,21 @@ test('cloud upsert sends large history collections in bounded batches', async ()
   assert.deepEqual(requests.map(request=>JSON.parse(request.options.body).length),[250,250,1]);
   assert.ok(requests.every(request=>request.token==='test-token'));
 });
+
+test('cloud history normalization supports O(1) saved-combination lookup maps', () => {
+  const context=createMergeHarness();
+  const localSaved=new Map([
+    ['1-2-3-4-5-6',{id:'local-a',numbers:[1,2,3,4,5,6]}]
+  ]);
+  const remoteIds=new Map([['remote-a','local-a']]);
+  const row={
+    record_key:'1250:remote-a',
+    payload:{
+      id:'1250:remote-a',savedId:'remote-a',round:1250,
+      numbers:[1,2,3,4,5,6],matches:3,bonusMatch:false,rank:'5등'
+    }
+  };
+  const normalized=context.normalizeCloudHistoryRecord(row,remoteIds,localSaved);
+  assert.equal(normalized.savedId,'local-a');
+  assert.equal(normalized.id,'1250:local-a');
+});
