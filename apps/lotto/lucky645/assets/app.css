@@ -452,3 +452,29 @@ td{color:#e0e8f0}
   .result-actions{flex-direction:row;justify-content:flex-end;width:100%}
   .result-actions button{flex:1}
 }
+
+
+/* LUCKY 645 research lab */
+.research-config-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.research-config{padding:13px;border:1px solid var(--line);border-radius:12px;background:#101923}
+.research-config span{display:block;color:var(--muted);font-size:10px}
+.research-config strong{display:block;margin-top:6px;font-size:13px}
+.research-progress-track{height:10px;margin-top:8px;border-radius:99px;background:#0b131c;overflow:hidden}
+.research-progress-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,#83b94a,var(--lime));transition:width .15s ease}
+.research-output-grid{align-items:start}
+.research-table-wrap{max-height:620px;overflow:auto}
+.research-table{min-width:650px}
+.research-positive{color:var(--green);font-weight:800}
+.research-monte-results{display:grid;gap:14px}
+.research-result-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.research-result-kpis>div{padding:12px;border:1px solid var(--line);border-radius:11px;background:#101923}
+.research-result-kpis span{display:block;color:var(--muted);font-size:10px}
+.research-result-kpis strong{display:block;margin-top:5px;font-size:17px}
+@media(max-width:760px){
+  .research-config-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .research-title-row{align-items:flex-start}
+  .research-output-grid{grid-template-columns:1fr}
+  .research-table-wrap{max-height:520px}
+  .mobile-nav button{min-width:0;padding-left:2px;padding-right:2px;font-size:8px}
+  .mobile-nav button span:first-child{font-size:15px}
+}
