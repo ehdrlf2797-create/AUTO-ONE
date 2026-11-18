@@ -1048,7 +1048,9 @@ async function runPortfolioSimulation() {
     const startedAt = Date.now();
     const attempts = Number(countInput?.value || 5000);
     // 몬테카를로 실험은 보안 토큰이 아니므로 고속 표준 난수를 사용합니다.
-    const result = simulatePortfolioStrategies(attempts, Math.random);
+    const result = await simulatePortfolioStrategiesAsync(attempts, Math.random, (completed,total) => {
+      output.textContent = `포트폴리오 실험 진행 중… ${formatNumber(completed)} / ${formatNumber(total)}회`;
+    });
     const elapsedMs = Date.now() - startedAt;
     const random = result.random;
     const coverage = result.coverage;
@@ -1461,37 +1463,76 @@ function evaluateTicketPortfolio(portfolio, drawNumbers) {
   return {coverage:covered.size,maxExposure:Math.max(...exposure.slice(1)),any3,any4,any5,any6};
 }
 
-function simulatePortfolioStrategies(count, rng = Math.random) {
+function createPortfolioSimulationState(count) {
   const attempts = Number(count);
   if (![1000,5000,10000].includes(attempts)) {
     throw new Error('실험 횟수는 1,000 / 5,000 / 10,000 중 선택해 주세요.');
   }
-  const ticketCount = 10;
-  const result = {
-    attempts,ticketCount,jackpotProbability:ticketCount/8145060,
+  return {
+    attempts,
+    completed:0,
+    ticketCount:10,
+    jackpotProbability:10/8145060,
     random:{coverage:0,maxExposure:0,any3:0,any4:0,any5:0,any6:0},
     coverage:{coverage:0,maxExposure:0,any3:0,any4:0,any5:0,any6:0}
   };
-  for (let run=0; run<attempts; run++) {
+}
+
+function simulatePortfolioBatch(state, batchSize, rng) {
+  const end = Math.min(state.attempts, state.completed + batchSize);
+  while (state.completed < end) {
     const draw = createRandomPortfolio(1,rng)[0];
-    const randomPortfolio = createRandomPortfolio(ticketCount,rng);
-    const coveragePortfolio = createCoveragePortfolio(ticketCount,[],rng);
+    const randomPortfolio = createRandomPortfolio(state.ticketCount,rng);
+    const coveragePortfolio = createCoveragePortfolio(state.ticketCount,[],rng);
+
     for (const [name,portfolio] of [['random',randomPortfolio],['coverage',coveragePortfolio]]) {
       const score = evaluateTicketPortfolio(portfolio,draw);
-      result[name].coverage += score.coverage;
-      result[name].maxExposure += score.maxExposure;
-      result[name].any3 += score.any3 ? 1 : 0;
-      result[name].any4 += score.any4 ? 1 : 0;
-      result[name].any5 += score.any5 ? 1 : 0;
-      result[name].any6 += score.any6 ? 1 : 0;
+      state[name].coverage += score.coverage;
+      state[name].maxExposure += score.maxExposure;
+      state[name].any3 += score.any3 ? 1 : 0;
+      state[name].any4 += score.any4 ? 1 : 0;
+      state[name].any5 += score.any5 ? 1 : 0;
+      state[name].any6 += score.any6 ? 1 : 0;
     }
+    state.completed++;
   }
+  return state;
+}
+
+function finalizePortfolioSimulation(state) {
+  const result = {
+    attempts:state.attempts,
+    ticketCount:state.ticketCount,
+    jackpotProbability:state.jackpotProbability,
+    random:{...state.random},
+    coverage:{...state.coverage}
+  };
   for (const name of ['random','coverage']) {
-    for (const key of ['coverage','maxExposure','any3','any4','any5','any6']) result[name][key] /= attempts;
+    for (const key of ['coverage','maxExposure','any3','any4','any5','any6']) {
+      result[name][key] /= state.attempts;
+    }
   }
   return result;
 }
 
+function simulatePortfolioStrategies(count, rng = Math.random) {
+  const state = createPortfolioSimulationState(count);
+  simulatePortfolioBatch(state,state.attempts,rng);
+  return finalizePortfolioSimulation(state);
+}
+
+async function simulatePortfolioStrategiesAsync(count, rng = Math.random, onProgress = () => {}) {
+  const state = createPortfolioSimulationState(count);
+  const batchSize = 250;
+  while (state.completed < state.attempts) {
+    simulatePortfolioBatch(state,batchSize,rng);
+    onProgress(state.completed,state.attempts);
+    if (state.completed < state.attempts) {
+      await new Promise(resolve => window.setTimeout(resolve,0));
+    }
+  }
+  return finalizePortfolioSimulation(state);
+}
 function renderGenerated() {
   $('resultCount').textContent = `${generated.length} 조합`;
   if (!generated.length) {
