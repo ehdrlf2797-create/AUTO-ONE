@@ -478,3 +478,11 @@ td{color:#e0e8f0}
   .mobile-nav button{min-width:0;padding-left:2px;padding-right:2px;font-size:8px}
   .mobile-nav button span:first-child{font-size:15px}
 }
+
+
+/* Research run diagnostics and visible failure states */
+.research-run-message{min-height:54px;transition:background .15s ease,border-color .15s ease}
+.research-message-warning{border-color:rgba(245,198,91,.55);background:rgba(245,198,91,.08);color:#f4d991}
+.research-message-error{border-color:rgba(255,129,124,.55);background:rgba(255,129,124,.08);color:#ffc0bc}
+#runResearchBtn[aria-busy="true"]{opacity:.9;cursor:progress}
+#researchProgressWrap{padding-top:4px}
