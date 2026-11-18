@@ -160,3 +160,16 @@ test('merges by run id, keeps newest copy and caps local history at twelve', () 
   assert.equal(merged[0].runId,'run-13');
   assert.equal(merged.filter(row=>row.runId==='run-13').length,1);
 });
+
+test('migrates a legacy v1 report with missing newer metrics', () => {
+  const legacy = {
+    version: 1, createdAt: '2026-10-01T00:00:00.000Z', drawCount: 200,
+    evaluation: { strategies: [{ id: 'legacy', label: '구형 전략', averageMatches: 0.81 }] }
+  };
+  const normalized = archive.normalizeReport(legacy);
+  assert.equal(normalized.runId, legacy.createdAt);
+  assert.equal(normalized.simulationCount, 0);
+  assert.equal(normalized.evaluation.strategies[0].baselineAverage, 0.8);
+  assert.equal(normalized.evaluation.strategies[0].delta, 0.01);
+  assert.equal(normalized.evaluation.strategies[0].zScore, 0);
+});
