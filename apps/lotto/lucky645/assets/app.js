@@ -1534,13 +1534,23 @@ function createCoveragePortfolio(quantity, existing = [], rng = randomUnit) {
     const combo = [];
     while (combo.length < 6) {
       let lowestExposure = Infinity;
-      for (const number of available) lowestExposure = Math.min(lowestExposure, exposure[number]);
-      const leastUsed = available.filter(number => exposure[number] === lowestExposure);
+      const leastUsedIndexes = [];
+      for (let index=0; index<available.length; index++) {
+        const currentExposure = exposure[available[index]];
+        if (currentExposure < lowestExposure) {
+          lowestExposure = currentExposure;
+          leastUsedIndexes.length = 0;
+          leastUsedIndexes.push(index);
+        } else if (currentExposure === lowestExposure) {
+          leastUsedIndexes.push(index);
+        }
+      }
       const sample = Number(rng());
       const safeSample = Number.isFinite(sample) ? Math.max(0,Math.min(0.999999999999,sample)) : 0;
-      const chosen = leastUsed[Math.floor(safeSample * leastUsed.length)];
+      const chosenIndex = leastUsedIndexes[Math.floor(safeSample * leastUsedIndexes.length)];
+      const chosen = available[chosenIndex];
       combo.push(chosen);
-      available.splice(available.indexOf(chosen),1);
+      available.splice(chosenIndex,1);
     }
     const sorted = sortNums(combo);
     const key = sorted.join('-');
@@ -1577,22 +1587,29 @@ function createRandomPortfolio(quantity, rng = randomUnit) {
 }
 
 function evaluateTicketPortfolio(portfolio, drawNumbers) {
-  const covered = new Set();
+  const winningNumbers = drawNumbers && typeof drawNumbers.has === 'function'
+    ? drawNumbers
+    : new Set(drawNumbers || []);
+  const covered = new Uint8Array(46);
   const exposure = Array(46).fill(0);
+  let coverage = 0;
   let any3 = false, any4 = false, any5 = false, any6 = false;
   for (const ticket of portfolio) {
     let matches = 0;
     for (const number of ticket) {
-      covered.add(number);
+      if (!covered[number]) {
+        covered[number] = 1;
+        coverage++;
+      }
       exposure[number]++;
-      if (drawNumbers.includes(number)) matches++;
+      if (winningNumbers.has(number)) matches++;
     }
     if (matches >= 3) any3 = true;
     if (matches >= 4) any4 = true;
     if (matches >= 5) any5 = true;
     if (matches === 6) any6 = true;
   }
-  return {coverage:covered.size,maxExposure:Math.max(...exposure.slice(1)),any3,any4,any5,any6};
+  return {coverage,maxExposure:Math.max(...exposure.slice(1)),any3,any4,any5,any6};
 }
 
 function createPortfolioSimulationState(count) {
@@ -1614,11 +1631,12 @@ function simulatePortfolioBatch(state, batchSize, rng) {
   const end = Math.min(state.attempts, state.completed + batchSize);
   while (state.completed < end) {
     const draw = createRandomPortfolio(1,rng)[0];
+    const winningNumbers = new Set(draw);
     const randomPortfolio = createRandomPortfolio(state.ticketCount,rng);
     const coveragePortfolio = createCoveragePortfolio(state.ticketCount,[],rng);
 
     for (const [name,portfolio] of [['random',randomPortfolio],['coverage',coveragePortfolio]]) {
-      const score = evaluateTicketPortfolio(portfolio,draw);
+      const score = evaluateTicketPortfolio(portfolio,winningNumbers);
       state[name].coverage += score.coverage;
       state[name].maxExposure += score.maxExposure;
       state[name].any3 += score.any3 ? 1 : 0;
