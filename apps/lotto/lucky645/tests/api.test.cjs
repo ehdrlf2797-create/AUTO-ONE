@@ -96,3 +96,17 @@ test('negative optional prize, winner and sales values are discarded', () => {
   assert.equal(draw.ranks[0].winners, null);
   assert.equal(draw.totalSales, null);
 });
+
+test('status endpoint documents that cache metrics are per serverless instance', async () => {
+  const handler = require('../api/lotto.js');
+  const response = {
+    headers:{},
+    setHeader(name,value){this.headers[name]=value;},
+    end(body){this.body=body;}
+  };
+  await handler({method:'GET',url:'/api/lotto?type=status',query:{type:'status'}},response);
+  const status = JSON.parse(response.body);
+  assert.equal(response.statusCode,200);
+  assert.equal(status.cacheScope,'serverless-instance-memory');
+  assert.match(status.cacheNote,/다른 인스턴스의 캐시 상태를 대표하지 않습니다/);
+});
