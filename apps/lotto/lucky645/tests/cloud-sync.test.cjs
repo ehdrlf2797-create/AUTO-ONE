@@ -153,3 +153,87 @@ test('sync does nothing when no authenticated user is present', async () => {
   await context.syncCloudData();
   assert.equal(runs, 0);
 });
+
+const savedNormalizerStart = appSource.indexOf('function normalizeSyncTimestamp(');
+const savedNormalizerEnd = appSource.indexOf('\nfunction loadSaved()', savedNormalizerStart);
+const historyNormalizerStart = appSource.indexOf('function normalizeSavedCheckRecord(');
+const historyNormalizerEnd = appSource.indexOf('\nfunction loadSavedCheckHistory()', historyNormalizerStart);
+const mergeHelperStart = appSource.indexOf('function mergeCloudSavedRecord(');
+const mergeHelperEnd = appSource.indexOf('\nfunction buildLocalCloudRows()', mergeHelperStart);
+assert.notEqual(savedNormalizerStart, -1);
+assert.notEqual(savedNormalizerEnd, -1);
+assert.notEqual(historyNormalizerStart, -1);
+assert.notEqual(historyNormalizerEnd, -1);
+assert.notEqual(mergeHelperStart, -1);
+assert.notEqual(mergeHelperEnd, -1);
+
+function createMergeHarness() {
+  const context = {};
+  vm.runInNewContext(
+    'function sortNums(numbers) { return [...numbers].sort((a,b)=>a-b); }\n' +
+    appSource.slice(savedNormalizerStart, savedNormalizerEnd) + '\n' +
+    appSource.slice(historyNormalizerStart, historyNormalizerEnd) + '\n' +
+    appSource.slice(mergeHelperStart, mergeHelperEnd) +
+    '\nthis.mergeCloudSavedRecord=mergeCloudSavedRecord;' +
+    '\nthis.normalizeCloudHistoryRecord=normalizeCloudHistoryRecord;',
+    context
+  );
+  return context;
+}
+
+test('cloud saved metadata uses the newest sync timestamp and preserves the local ID', () => {
+  const context = createMergeHarness();
+  const local = {
+    id:'local-stable-id', numbers:[1,2,3,4,5,6], mode:'random',
+    favorite:false, syncUpdatedAt:'2026-11-18T00:00:00.000Z'
+  };
+  const newerRemote = {
+    id:'remote-device-id', numbers:[1,2,3,4,5,6], mode:'coverage',
+    favorite:true, syncUpdatedAt:'2026-11-18T00:05:00.000Z'
+  };
+
+  const merged = context.mergeCloudSavedRecord(local,newerRemote);
+  assert.equal(merged.id,'local-stable-id');
+  assert.equal(merged.mode,'coverage');
+  assert.equal(merged.favorite,true);
+  assert.equal(merged.syncUpdatedAt,'2026-11-18T00:05:00.000Z');
+
+  const staleRemote = {
+    id:'old-device-id', numbers:[1,2,3,4,5,6], mode:'random',
+    favorite:false, syncUpdatedAt:'2026-11-17T23:59:00.000Z'
+  };
+  context.mergeCloudSavedRecord(local,staleRemote);
+  assert.equal(local.id,'local-stable-id');
+  assert.equal(local.favorite,true);
+  assert.equal(local.mode,'coverage');
+});
+
+test('cloud history maps duplicate device IDs to one canonical saved-history key', () => {
+  const context = createMergeHarness();
+  const localSaved = [{id:'local-stable-id',numbers:[1,2,3,4,5,6]}];
+  const remoteSavedIds = new Map([
+    ['remote-device-a','local-stable-id'],
+    ['remote-device-b','local-stable-id']
+  ]);
+  const base = {
+    round:1250, savedId:'remote-device-a', numbers:[1,2,3,4,5,6],
+    matches:3, bonusMatch:false, rank:'5등', mode:'coverage'
+  };
+  const first = context.normalizeCloudHistoryRecord({
+    record_key:'old-history-a',
+    payload:{...base,id:'old-history-a'}
+  },remoteSavedIds,localSaved);
+  const second = context.normalizeCloudHistoryRecord({
+    record_key:'old-history-b',
+    payload:{...base,savedId:'remote-device-b',id:'old-history-b'}
+  },remoteSavedIds,localSaved);
+
+  assert.equal(first.savedId,'local-stable-id');
+  assert.equal(first.id,'1250:local-stable-id');
+  assert.equal(second.id,first.id);
+});
+
+test('cloud merge refreshes dependent backtest after data reconciliation', () => {
+  assert.match(appSource, /if\(savedBacktestResult\) runSavedBacktest\(\);/);
+  assert.match(appSource, /if\(dataReady && latestVerification==='official'\) autoCheckLatestDraw\(\);/);
+});
