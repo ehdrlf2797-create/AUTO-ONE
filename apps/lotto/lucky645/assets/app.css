@@ -392,3 +392,36 @@ td{color:#e0e8f0}
   #portfolioSimulationOutput .table-wrap{margin-left:-2px;margin-right:-2px}
   #portfolioSimulationOutput .analytics-table{min-width:420px}
 }
+
+
+/* Dedicated simulation studio */
+.simulation-frequency-chart{display:grid;gap:9px}
+.simulation-bar-row{display:grid;grid-template-columns:64px minmax(0,1fr) 56px;gap:9px;align-items:center;font-size:11px}
+.simulation-rank{color:#cbd5e1;font-weight:750;white-space:nowrap}
+.simulation-bar-track{height:12px;background:#202d3a;border-radius:99px;position:relative;overflow:visible}
+.simulation-bar-fill{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6eb7e8,#c5f36a)}
+.simulation-expected-marker{position:absolute;top:-3px;bottom:-3px;width:2px;border-left:2px dashed #f5c65b;z-index:1}
+.simulation-bar-row strong{text-align:right;font-size:11px;font-variant-numeric:tabular-nums}
+.simulation-hot-list{display:grid;gap:7px}
+.simulation-hot-row{display:grid;grid-template-columns:20px 34px minmax(55px,1fr) 48px;gap:8px;align-items:center;padding:7px 8px;border-bottom:1px solid var(--line);font-size:11px}
+.simulation-hot-row>strong{text-align:right}
+.simulation-hot-rank{color:var(--muted);font-weight:800}
+.simulation-deviation{color:var(--muted);text-align:right;font-size:10px;font-variant-numeric:tabular-nums}
+.simulation-frequency-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.simulation-frequency-chip{display:grid;justify-items:center;gap:3px;padding:10px 5px;background:#111923;border:1px solid var(--line);border-radius:10px}
+.simulation-frequency-chip strong{font-size:15px;color:var(--lime)}
+.simulation-frequency-chip span{font-size:10px;font-weight:750;font-variant-numeric:tabular-nums}
+.simulation-frequency-chip small{font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
+.simulation-pool-numbers{display:flex;flex-wrap:wrap;gap:8px;padding-top:10px}
+.simulation-pool-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border:1px solid var(--line);border-radius:99px;background:#111923}
+.simulation-pool-chip small{font-size:10px;color:var(--muted);font-weight:750}
+.simulation-pool-numbers.empty{padding:12px;background:#111923;border-radius:10px}
+@media(max-width:760px){
+  .simulation-frequency-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+  .simulation-frequency-chip{padding:8px 3px}
+  .simulation-bar-row{grid-template-columns:56px minmax(0,1fr) 46px;gap:6px}
+  .simulation-hot-row{grid-template-columns:17px 32px minmax(45px,1fr) 42px;gap:6px;padding:6px 4px}
+  .mobile-nav{justify-content:flex-start;overflow-x:auto;scrollbar-width:none}
+  .mobile-nav::-webkit-scrollbar{display:none}
+  .mobile-nav button{flex:0 0 58px}
+}
