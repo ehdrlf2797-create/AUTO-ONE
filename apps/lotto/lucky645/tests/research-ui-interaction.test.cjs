@@ -39,16 +39,20 @@ function makeContext(engineOverride) {
   const ids = [
     'researchDrawCount','researchRoundRange','researchCandidateCount','researchCandidateBadge',
     'researchDataStatus','runResearchBtn','researchCandidateList','researchRunMessage',
-    'researchProgressWrap','researchProgressBar','researchProgressLabel','researchProgressPct'
+    'researchProgressWrap','researchProgressBar','researchProgressLabel','researchProgressPct',
+    'researchCompareSelect','researchCompareSummary','researchHistoryList'
   ];
   const nodes = Object.fromEntries(ids.map(id => [id, node()]));
   const engine = engineOverride || {
     normalizeDraws(rows) { return rows; },
     async runStudy(rows, options, onProgress) {
+      onProgress({ stage: 'baselines', completed: 25, total: 200 });
       onProgress({ stage: 'strategies', completed: 25, total: 100 });
       onProgress({ stage: 'montecarlo', completed: 250000, total: 1000000 });
       return {
-        version: 1,
+        version: 2,
+        runId: 'test-run-2026',
+        seed: 'test-seed',
         createdAt: '2026-11-19T00:00:00.000Z',
         drawCount: rows.length,
         strategyCount: options.strategyCount,
@@ -64,6 +68,8 @@ function makeContext(engineOverride) {
     dataReady: false,
     researchCandidates: [],
     researchReport: null,
+    researchHistory: [],
+    researchCompareRunId: '',
     researchRunning: false,
     researchLastRunMessage: '',
     researchLastRunTone: 'normal',
@@ -74,6 +80,8 @@ function makeContext(engineOverride) {
     toast() {},
     persistResearchState() { return true; },
     renderResearchResults() {},
+    renderResearchHistory() {},
+    recordResearchRun(report) { context.researchHistory = [report, ...context.researchHistory].slice(0, 12); },
     renderResearchLab() {},
     Date,
     Set,
@@ -130,6 +138,7 @@ test('research run invokes 100 strategies and one million simulations and expose
       assert.equal(rows.length, 200);
       assert.equal(options.strategyCount, 100);
       assert.equal(options.simulations, 1000000);
+      assert.equal(options.baselineCount, 200);
       onProgress({ stage: 'strategies', completed: 25, total: 100 });
       enteredResolve();
       await new Promise(resolve => { release = resolve; });
@@ -147,6 +156,7 @@ test('research run invokes 100 strategies and one million simulations and expose
   release();
   await task;
   assert.equal(context.researchReport.simulationCount, 1000000);
+  assert.equal(context.researchHistory.length, 1);
   assert.equal(context.__nodes.runResearchBtn.disabled, false);
   assert.equal(context.__nodes.runResearchBtn.attributes['aria-busy'], 'false');
   assert.match(context.__nodes.researchRunMessage.textContent, /연구 완료/);
