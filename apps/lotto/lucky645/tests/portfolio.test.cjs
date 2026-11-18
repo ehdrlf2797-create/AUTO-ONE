@@ -115,7 +115,7 @@ test('portfolio simulation async runner reports progress and completes in chunks
 
 test('portfolio simulator has a fast non-cryptographic default RNG and UI explicitly uses it', () => {
   assert.match(appSource, /function simulatePortfolioStrategies\(count, rng = Math\.random\)/);
-  assert.match(appSource, /simulatePortfolioStrategies\(attempts, Math\.random\)/);
+  assert.match(appSource, /simulatePortfolioStrategiesAsync\(attempts, Math\.random,/);
   assert.match(appSource, /async function runPortfolioSimulation\(\)/);
 });
 
