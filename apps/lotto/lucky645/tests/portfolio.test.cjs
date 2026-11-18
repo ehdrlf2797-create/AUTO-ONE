@@ -174,9 +174,9 @@ test('analytics preparation sorts and validates non-canonical history safely', (
     {round:3,numbers:[1,1,2,3,4,5]}
   ];
   const sample=context.prepareAnalyticsSample(input);
-  assert.deepEqual(sample.map(row=>row.round),[1,2]);
-  assert.deepEqual(sample[0].numbers,[1,2,3,4,5,6]);
-  assert.deepEqual(sample[1].numbers,[2,4,6,8,10,12]);
+  assert.deepEqual(Array.from(sample,row=>row.round),[1,2]);
+  assert.deepEqual(Array.from(sample[0].numbers),[1,2,3,4,5,6]);
+  assert.deepEqual(Array.from(sample[1].numbers),[2,4,6,8,10,12]);
 });
 
 test('saved backtest now precomputes draw lookups and prize tables only once', () => {
