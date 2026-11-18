@@ -31,6 +31,8 @@ const CACHE_KEY = 'lucky645_draws_cache_v1';
 const SAVED_KEY = 'lucky645_saved';
 const SYNC_KEY = 'lucky645_sync_meta_v1';
 const SAVED_CHECKS_KEY = 'lucky645_saved_check_history_v1';
+const SIMULATION_HISTORY_KEY = 'lucky645_simulation_history_v1';
+const MAX_SIMULATION_HISTORY = 20;
 const AUTO_CHECK_KEY = 'lucky645_auto_check_meta_v1';
 const MAX_BACKUP_FILE_SIZE = 12 * 1024 * 1024;
 const SUPABASE_URL = 'https://absljxjxrrhmswhpthol.supabase.co';
@@ -66,6 +68,9 @@ let historyRound = null;
 let statsPeriod = 'all';
 let analyticsPeriod = 'all';
 let lastSimulation = null;
+let simulationProfiles = loadSimulationProfiles();
+let lastFrequencySimulation = null;
+let simulationGeneratedTickets = [];
 let isRefreshing = false;
 
 const $ = id => document.getElementById(id);
@@ -77,6 +82,45 @@ function normalizeSyncTimestamp(value) {
   const timestamp = typeof value === 'string' ? Date.parse(value) : NaN;
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : '';
 }
+
+
+function normalizeSimulationProfile(item,index=0) {
+  if (!item || typeof item !== 'object') return null;
+  const attempts=Number(item.attempts);
+  const counts=Array.isArray(item.counts)?item.counts.map(Number):[];
+  const allowed=[1000,10000,50000,100000];
+  if (!allowed.includes(attempts) || counts.length!==45 ||
+      counts.some(value=>!Number.isSafeInteger(value)||value<0) ||
+      counts.reduce((sum,value)=>sum+value,0)!==attempts*6) return null;
+  const createdAt=normalizeSyncTimestamp(item.createdAt);
+  if (!createdAt) return null;
+  return {
+    id:String(item.id||('simulation-'+index)).slice(0,100),
+    attempts,
+    counts,
+    createdAt,
+    expectedPerNumber:attempts*6/45
+  };
+}
+
+function loadSimulationProfiles() {
+  try {
+    const raw=JSON.parse(localStorage.getItem(SIMULATION_HISTORY_KEY)||'[]');
+    return Array.isArray(raw)?raw.map(normalizeSimulationProfile).filter(Boolean).slice(0,MAX_SIMULATION_HISTORY):[];
+  } catch (_) { return []; }
+}
+
+function persistSimulationProfiles(nextProfiles) {
+  try {
+    localStorage.setItem(SIMULATION_HISTORY_KEY,JSON.stringify(nextProfiles.slice(0,MAX_SIMULATION_HISTORY)));
+    simulationProfiles=nextProfiles.slice(0,MAX_SIMULATION_HISTORY);
+    return true;
+  } catch (_) {
+    toast('시뮬레이션 결과를 저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.');
+    return false;
+  }
+}
+
 
 function normalizeSavedEntry(entry, index = 0) {
   if (!entry || typeof entry !== 'object' || !Array.isArray(entry.numbers)) return null;
@@ -883,9 +927,10 @@ function renderLatest() {
 function navigate(page) {
   document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active',el.id===`page-${page}`));
   document.querySelectorAll('[data-page]').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
-  const labels = {home:'데이터와 무작위 조합으로 만드는 나만의 번호',generator:'원하는 방식으로 로또 번호 조합 생성',stats:'역대 당첨번호 통계와 숫자 분포 분석',analytics:'전체 회차 기반 고급 통계와 무작위 시뮬레이션',checker:'저장한 조합 및 직접 입력 번호 당첨 확인',saved:'내가 보관한 번호 조합 관리',history:'회차별 로또 6/45 당첨 결과'};
+  const labels = {home:'데이터와 무작위 조합으로 만드는 나만의 번호',generator:'원하는 방식으로 로또 번호 조합 생성',stats:'역대 당첨번호 통계와 숫자 분포 분석',analytics:'전체 회차 기반 고급 통계와 번호 패턴 분석',simulation:'무작위 실험으로 번호별 빈도 그래프와 조합 후보 확인',checker:'저장한 조합 및 직접 입력 번호 당첨 확인',saved:'내가 보관한 번호 조합 관리',history:'회차별 로또 6/45 당첨 결과'};
   $('pageSubtitle').textContent = labels[page] || labels.home;
   if (page === 'analytics') renderAnalytics();
+  if (page === 'simulation') renderSimulationPage();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 window.navigate = navigate;
@@ -1141,6 +1186,115 @@ function simulateCombinations(count, rng=Math.random) {
   return {attempts,totalSum,averageSum:totalSum/attempts,averageOdd:totalOdd/attempts,numberCounts,oddDistribution,sumBins};
 }
 
+
+function simulationRandomIndex(rng,maxExclusive) {
+  const raw=Number(rng());
+  const safe=Number.isFinite(raw)?Math.max(0,Math.min(0.999999999999,raw)):0;
+  return Math.floor(safe*maxExclusive);
+}
+
+function createFrequencySimulationState(attempts) {
+  const allowed=[1000,10000,50000,100000];
+  if (!allowed.includes(Number(attempts))) throw new Error('실험 횟수는 1,000 / 10,000 / 50,000 / 100,000 중에서 선택해 주세요.');
+  return {attempts:Number(attempts),completed:0,numberCounts:Array(46).fill(0)};
+}
+
+function simulateFrequencyDraw(numberCounts,rng=Math.random) {
+  // Floyd 표본 추출: 45개 중 6개를 편향 없이 뽑으며 매 회차 전체 배열을 복사하지 않습니다.
+  const selected=new Set();
+  for(let index=39;index<45;index++){
+    const candidate=simulationRandomIndex(rng,index+1);
+    selected.add(selected.has(candidate)?index:candidate);
+  }
+  for(const index of selected) numberCounts[index+1]++;
+}
+
+function simulateFrequencyBatch(state,batchSize,rng=Math.random) {
+  const count=Math.max(0,Math.min(Number(batchSize)||0,state.attempts-state.completed));
+  for(let index=0;index<count;index++) simulateFrequencyDraw(state.numberCounts,rng);
+  state.completed+=count;
+  return state;
+}
+
+function finalizeFrequencySimulation(state) {
+  const expectedPerNumber=state.attempts*6/45;
+  let chiSquare=0,totalNumbers=0;
+  for(let number=1;number<=45;number++){
+    const observed=state.numberCounts[number];
+    totalNumbers+=observed;
+    const delta=observed-expectedPerNumber;
+    chiSquare+=delta*delta/expectedPerNumber;
+  }
+  const ranking=Array.from({length:45},(_,index)=>({number:index+1,count:state.numberCounts[index+1]}))
+    .sort((a,b)=>b.count-a.count||a.number-b.number);
+  return {
+    attempts:state.attempts,
+    numberCounts:state.numberCounts,
+    totalNumbers,
+    expectedPerNumber,
+    chiSquare,
+    ranking,
+    topNumbers:ranking.slice(0,10)
+  };
+}
+
+function simulateFrequencyDistribution(count,rng=Math.random) {
+  const state=createFrequencySimulationState(count);
+  simulateFrequencyBatch(state,state.attempts,rng);
+  return finalizeFrequencySimulation(state);
+}
+
+async function simulateFrequencyDistributionAsync(count,rng=Math.random,onProgress=()=>{}) {
+  const state=createFrequencySimulationState(count);
+  const batchSize=5000;
+  onProgress(0,state.attempts);
+  while(state.completed<state.attempts){
+    simulateFrequencyBatch(state,batchSize,rng);
+    onProgress(state.completed,state.attempts);
+    if(state.completed<state.attempts) await new Promise(resolve=>window.setTimeout(resolve,0));
+  }
+  return finalizeFrequencySimulation(state);
+}
+
+function rankSimulationNumbers(profile) {
+  const counts=Array.isArray(profile?.counts)?profile.counts:[];
+  if(counts.length!==45) return [];
+  return counts.map((count,index)=>({number:index+1,count:Number(count)}))
+    .sort((a,b)=>b.count-a.count||a.number-b.number);
+}
+
+function buildSimulationCombinations(profile,poolSize,quantity,rng=Math.random,existing=[]) {
+  const allowedPoolSizes=[6,8,10,12,15,20];
+  const allowedQuantities=[1,3,5,10];
+  if(!allowedPoolSizes.includes(Number(poolSize))||!allowedQuantities.includes(Number(quantity))) {
+    throw new Error('후보 번호 수 또는 생성 조합 수를 확인해 주세요.');
+  }
+  const ranking=rankSimulationNumbers(profile);
+  if(ranking.length!==45) throw new Error('사용할 시뮬레이션 결과가 올바르지 않습니다.');
+  const pool=ranking.slice(0,Number(poolSize)).map(item=>item.number);
+  const seen=new Set();
+  for(const item of Array.isArray(existing)?existing:[]){
+    const numbers=Array.isArray(item)?item:item?.numbers;
+    if(Array.isArray(numbers)&&numbers.length===6&&new Set(numbers).size===6) seen.add([...numbers].sort((a,b)=>a-b).join('-'));
+  }
+  const tickets=[];
+  let attempts=0;
+  while(tickets.length<Number(quantity)&&attempts<Number(quantity)*250){
+    attempts++;
+    const candidates=[...pool];
+    for(let index=0;index<6;index++){
+      const swap=index+simulationRandomIndex(rng,candidates.length-index);
+      [candidates[index],candidates[swap]]=[candidates[swap],candidates[index]];
+    }
+    const ticket=candidates.slice(0,6).sort((a,b)=>a-b);
+    const key=ticket.join('-');
+    if(seen.has(key)) continue;
+    seen.add(key);
+    tickets.push(ticket);
+  }
+  return {pool,tickets};
+}
+
 async function runPortfolioSimulation() {
   const button = $('runPortfolioSimulationBtn');
   const output = $('portfolioSimulationOutput');
@@ -1209,6 +1363,218 @@ function runAnalyticsSimulation() {
     toast(`${formatNumber(result.attempts)}회 조합 시뮬레이션을 완료했습니다.`);
     return result;
   } catch(error) { toast(error.message); return null; }
+}
+
+
+function selectedSimulationProfile() {
+  const selector=$('simulationProfileSelect');
+  const selected=selector?.value||'';
+  if(selected==='latest'&&lastFrequencySimulation){
+    return {
+      id:'latest',
+      attempts:lastFrequencySimulation.attempts,
+      counts:lastFrequencySimulation.numberCounts.slice(1),
+      createdAt:lastFrequencySimulation.createdAt,
+      expectedPerNumber:lastFrequencySimulation.expectedPerNumber
+    };
+  }
+  return simulationProfiles.find(profile=>profile.id===selected)||null;
+}
+
+function renderSimulationProfileSelector(preferredId=null) {
+  const selector=$('simulationProfileSelect');
+  if(!selector) return;
+  const previous=preferredId||selector.value;
+  const options=[];
+  if(lastFrequencySimulation) options.push('<option value="latest">이번 실행 결과 · 저장 전</option>');
+  simulationProfiles.forEach(profile=>{
+    const stamp=new Date(profile.createdAt).toLocaleString('ko-KR');
+    options.push('<option value="'+escapeHtml(profile.id)+'">'+formatNumber(profile.attempts)+'회 · '+escapeHtml(stamp)+'</option>');
+  });
+  selector.innerHTML=options.length?options.join(''):'<option value="">저장된 결과가 없습니다.</option>';
+  selector.disabled=!options.length;
+  const valid=options.some(option=>option.includes('value="'+previous+'"'));
+  if(valid) selector.value=previous;
+  else if(lastFrequencySimulation) selector.value='latest';
+  else if(simulationProfiles.length) selector.value=simulationProfiles[0].id;
+  else selector.value='';
+  const selected=selectedSimulationProfile();
+  if($('saveSimulationResultBtn')) $('saveSimulationResultBtn').disabled=!lastFrequencySimulation;
+  if($('deleteSimulationProfileBtn')) $('deleteSimulationProfileBtn').disabled=!selected||selected.id==='latest';
+  if($('buildSimulationTicketsBtn')) $('buildSimulationTicketsBtn').disabled=!selected;
+}
+
+function renderSimulationPoolNumbers(profile=selectedSimulationProfile()) {
+  const target=$('simulationPoolNumbers');
+  if(!target) return;
+  if(!profile){
+    target.className='simulation-pool-numbers empty';
+    target.textContent='먼저 시뮬레이션을 실행하거나 저장된 결과를 선택하세요.';
+    return;
+  }
+  const size=Number($('simulationPoolSize')?.value||8);
+  const pool=rankSimulationNumbers(profile).slice(0,size);
+  target.className='simulation-pool-numbers';
+  target.innerHTML=pool.map(item=>'<span class="simulation-pool-chip">'+ball(item.number,true)+'<small>'+formatNumber(item.count)+'회</small></span>').join('');
+}
+
+function renderSimulationProfile(profile=selectedSimulationProfile()) {
+  if(!profile){
+    $('simulationDrawCount').textContent='-';
+    $('simulationExpectedCount').textContent='-';
+    $('simulationTopNumber').textContent='-';
+    $('simulationTopCount').textContent='실험 결과 대기 중';
+    $('simulationFrequencyChart').className='empty';
+    $('simulationFrequencyChart').textContent='실험을 실행하면 그래프가 나타납니다.';
+    $('simulationHotNumbers').className='empty';
+    $('simulationHotNumbers').textContent='실험 결과가 여기에 표시됩니다.';
+    $('simulationAllNumbers').className='empty';
+    $('simulationAllNumbers').textContent='실험 결과가 여기에 표시됩니다.';
+    $('simulationProfileMeta').textContent='실험을 실행한 뒤 저장 버튼을 눌러 빈출 번호 순위를 보관하세요.';
+    $('simulationGraphLegend').textContent='각 번호의 이론적 기대 횟수도 함께 표시됩니다.';
+    renderSimulationPoolNumbers(null);
+    if($('buildSimulationTicketsBtn')) $('buildSimulationTicketsBtn').disabled=true;
+    if($('deleteSimulationProfileBtn')) $('deleteSimulationProfileBtn').disabled=true;
+    return;
+  }
+  const ranking=rankSimulationNumbers(profile);
+  const expected=profile.attempts*6/45;
+  const top=ranking.slice(0,15);
+  const max=Math.max(expected,...top.map(item=>item.count),1);
+  $('simulationDrawCount').textContent=formatNumber(profile.attempts);
+  $('simulationExpectedCount').textContent=formatNumber(expected.toFixed(1));
+  $('simulationTopNumber').textContent=ranking[0].number+'번';
+  $('simulationTopCount').textContent=formatNumber(ranking[0].count)+'회 출현 · 이론 평균 대비 '+(ranking[0].count-expected>=0?'+':'')+(ranking[0].count-expected).toFixed(1);
+  $('simulationGraphLabel').textContent='상위 15개 · 기대 '+formatNumber(expected.toFixed(1))+'회';
+  $('simulationFrequencyChart').className='simulation-frequency-chart';
+  $('simulationFrequencyChart').innerHTML=top.map((item,index)=>{
+    const width=Math.max(1,item.count/max*100);
+    const marker=Math.min(99.5,expected/max*100);
+    return '<div class="simulation-bar-row"><span class="simulation-rank">'+(index+1)+'. '+item.number+'번</span><div class="simulation-bar-track"><span class="simulation-bar-fill" style="width:'+width.toFixed(2)+'%"></span><i class="simulation-expected-marker" style="left:'+marker.toFixed(2)+'%"></i></div><strong>'+formatNumber(item.count)+'</strong></div>';
+  }).join('');
+  $('simulationHotNumbers').className='simulation-hot-list';
+  $('simulationHotNumbers').innerHTML=ranking.slice(0,10).map((item,index)=>'<div class="simulation-hot-row"><span class="simulation-hot-rank">'+(index+1)+'</span>'+ball(item.number,true)+'<strong>'+formatNumber(item.count)+'회</strong><span class="simulation-deviation">'+(item.count-expected>=0?'+':'')+(item.count-expected).toFixed(1)+'</span></div>').join('');
+  $('simulationAllNumbers').className='simulation-frequency-grid';
+  $('simulationAllNumbers').innerHTML=ranking.slice().sort((a,b)=>a.number-b.number).map(item=>{
+    const deviation=((item.count-expected)/expected*100);
+    return '<div class="simulation-frequency-chip"><strong>'+item.number+'</strong><span>'+formatNumber(item.count)+'회</span><small>'+(deviation>=0?'+':'')+deviation.toFixed(1)+'%</small></div>';
+  }).join('');
+  $('simulationGraphLegend').textContent='세로 기준선은 번호별 이론 평균 '+formatNumber(expected.toFixed(1))+'회입니다. 전체 번호의 기대 출현 수 합계는 '+formatNumber(profile.attempts*6)+'개입니다.';
+  $('simulationProfileMeta').textContent=formatNumber(profile.attempts)+'회 실험 · '+new Date(profile.createdAt).toLocaleString('ko-KR')+' · 상위 번호는 이번 표본의 관측 순위입니다.';
+  if($('buildSimulationTicketsBtn')) $('buildSimulationTicketsBtn').disabled=false;
+  if($('deleteSimulationProfileBtn')) $('deleteSimulationProfileBtn').disabled=profile.id==='latest';
+  renderSimulationPoolNumbers(profile);
+}
+
+function renderSimulationPage(preferredId=null) {
+  renderSimulationProfileSelector(preferredId);
+  renderSimulationProfile();
+}
+
+async function runSimulationStudio() {
+  const button=$('runSimulationStudioBtn');
+  const progress=$('simulationStudioProgress');
+  const original=button.textContent;
+  const attempts=Number($('simulationStudioCount').value);
+  button.disabled=true;
+  button.textContent='실험 실행 중…';
+  progress.textContent='0 / '+formatNumber(attempts)+'회';
+  try{
+    const result=await simulateFrequencyDistributionAsync(attempts,Math.random,(completed,total)=>{
+      progress.textContent=formatNumber(completed)+' / '+formatNumber(total)+'회';
+    });
+    result.createdAt=new Date().toISOString();
+    lastFrequencySimulation=result;
+    simulationGeneratedTickets=[];
+    $('simulationTicketsOutput').className='empty';
+    $('simulationTicketsOutput').textContent='빈출 번호로 조합을 생성하면 여기에 표시됩니다.';
+    $('saveSimulationTicketsBtn').disabled=true;
+    renderSimulationPage('latest');
+    progress.textContent=formatNumber(result.attempts)+'회 실험 완료';
+    toast(formatNumber(result.attempts)+'회 시뮬레이션을 완료했습니다.');
+    return result;
+  }catch(error){
+    progress.textContent='실험 실패';
+    toast(error?.message||'시뮬레이션을 실행하지 못했습니다.');
+    return null;
+  }finally{
+    button.disabled=false;
+    button.textContent=original;
+  }
+}
+
+function saveCurrentSimulationResult() {
+  if(!lastFrequencySimulation) return toast('먼저 시뮬레이션을 실행해 주세요.');
+  const profile={
+    id:'sim-'+Date.now()+'-'+Math.random().toString(16).slice(2,8),
+    attempts:lastFrequencySimulation.attempts,
+    counts:lastFrequencySimulation.numberCounts.slice(1),
+    createdAt:lastFrequencySimulation.createdAt
+  };
+  const next=[profile,...simulationProfiles.filter(item=>item.id!==profile.id)].slice(0,MAX_SIMULATION_HISTORY);
+  if(!persistSimulationProfiles(next)) return;
+  renderSimulationPage(profile.id);
+  toast('시뮬레이션 빈도 결과를 이 브라우저에 저장했습니다.');
+}
+
+function deleteSelectedSimulationResult() {
+  const profile=selectedSimulationProfile();
+  if(!profile||profile.id==='latest') return toast('삭제할 저장 결과를 선택해 주세요.');
+  if(!confirm('선택한 시뮬레이션 결과를 삭제할까요?')) return;
+  const next=simulationProfiles.filter(item=>item.id!==profile.id);
+  if(!persistSimulationProfiles(next)) return;
+  renderSimulationPage();
+  toast('선택한 시뮬레이션 결과를 삭제했습니다.');
+}
+
+function buildSimulationTicketSet() {
+  const profile=selectedSimulationProfile();
+  if(!profile) return toast('먼저 사용할 시뮬레이션 결과를 선택해 주세요.');
+  try{
+    const poolSize=Number($('simulationPoolSize').value);
+    const quantity=Number($('simulationTicketQuantity').value);
+    const result=buildSimulationCombinations(profile,poolSize,quantity,Math.random,saved);
+    simulationGeneratedTickets=result.tickets;
+    $('simulationPoolNumbers').className='simulation-pool-numbers';
+    $('simulationPoolNumbers').innerHTML=result.pool.map(number=>{
+      const row=rankSimulationNumbers(profile).find(item=>item.number===number);
+      return '<span class="simulation-pool-chip">'+ball(number,true)+'<small>'+formatNumber(row?.count||0)+'회</small></span>';
+    }).join('');
+    $('simulationTicketsOutput').className=result.tickets.length?'result-list':'empty';
+    $('simulationTicketsOutput').innerHTML=result.tickets.length?result.tickets.map((numbers,index)=>'<div class="result-row"><div class="result-left"><span class="result-index">'+String(index+1).padStart(2,'0')+'</span><div class="result-balls">'+numbers.map(number=>ball(number,true)).join('')+'</div></div><span class="badge">시뮬레이션 참고</span></div>').join(''):'현재 후보 숫자와 보관함 조합을 기준으로 새로운 조합을 만들지 못했습니다.';
+    $('saveSimulationTicketsBtn').disabled=!result.tickets.length;
+    if(result.tickets.length<quantity) toast(result.tickets.length+'개 조합만 만들었습니다. 후보 숫자 수를 늘려 보세요.');
+    else toast(result.tickets.length+'개 시뮬레이션 참고 조합을 만들었습니다.');
+    return result;
+  }catch(error){
+    toast(error?.message||'조합 생성에 실패했습니다.');
+    return null;
+  }
+}
+
+function saveSimulationTicketSet() {
+  if(!simulationGeneratedTickets.length) return toast('먼저 빈출 번호 조합을 생성해 주세요.');
+  const known=new Set(saved.map(item=>item.numbers.join('-')));
+  const now=new Date();
+  let added=0;
+  for(const numbers of simulationGeneratedTickets){
+    const key=numbers.join('-');
+    if(known.has(key)) continue;
+    known.add(key);
+    saved.unshift({
+      id:'sim-ticket-'+Date.now()+'-'+Math.random().toString(16).slice(2),
+      numbers:sortNums(numbers),
+      mode:'stats',
+      date:now.toLocaleDateString('ko-KR'),
+      favorite:false,
+      syncUpdatedAt:now.toISOString()
+    });
+    added++;
+  }
+  if(!added) return toast('생성한 조합은 이미 보관함에 있습니다.');
+  persistSaved();
+  renderSavedReports();
+  toast(added+'개 조합을 내 번호 보관함에 저장했습니다.');
 }
 
 function exportAnalyticsCsv() {
@@ -2172,6 +2538,13 @@ function bindEvents() {
   document.querySelectorAll('[data-analytics-period]').forEach(button=>button.addEventListener('click',()=>{analyticsPeriod=button.dataset.analyticsPeriod;renderAnalytics();}));
   $('runSimulationBtn').addEventListener('click',runAnalyticsSimulation);
   $('runPortfolioSimulationBtn').addEventListener('click',runPortfolioSimulation);
+  $('runSimulationStudioBtn').addEventListener('click',runSimulationStudio);
+  $('saveSimulationResultBtn').addEventListener('click',saveCurrentSimulationResult);
+  $('deleteSimulationProfileBtn').addEventListener('click',deleteSelectedSimulationResult);
+  $('simulationProfileSelect').addEventListener('change',()=>{simulationGeneratedTickets=[];$('simulationTicketsOutput').className='empty';$('simulationTicketsOutput').textContent='선택한 결과에서 빈출 번호 조합을 생성해 주세요.';$('saveSimulationTicketsBtn').disabled=true;renderSimulationPage($('simulationProfileSelect').value);});
+  $('simulationPoolSize').addEventListener('change',()=>renderSimulationPoolNumbers());
+  $('buildSimulationTicketsBtn').addEventListener('click',buildSimulationTicketSet);
+  $('saveSimulationTicketsBtn').addEventListener('click',saveSimulationTicketSet);
   $('exportAnalyticsBtn').addEventListener('click',exportAnalyticsCsv);
   $('startHybridBtn').addEventListener('click',()=>{
     activeMode='hybrid';
@@ -2243,6 +2616,7 @@ function init() {
   renderLatest();
   renderStats();
   renderAnalytics();
+  renderSimulationPage();
   renderHistory();
   renderHomeRecent();
   renderSaved();
