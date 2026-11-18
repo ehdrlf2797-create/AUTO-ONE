@@ -57,7 +57,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=[^"]+"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261118-integrity-audit-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
