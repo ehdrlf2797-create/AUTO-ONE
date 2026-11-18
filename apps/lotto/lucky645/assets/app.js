@@ -1137,7 +1137,7 @@ async function runResearchLab() {
   if ($('researchProgressWrap')) $('researchProgressWrap').style.display = 'block';
   if ($('researchProgressBar')) $('researchProgressBar').style.width = '0%';
   if ($('researchRunMessage')) $('researchRunMessage').textContent = '데이터 사전 검사 통과: '+formatNumber(validatedDraws.length)+'개 회차. 이제 100개 전략을 평가합니다.';
-  updateResearchProgress('1/3 전체 회차 검증 완료 · 전략 평가 준비', 0, 100, 0, 50);
+  updateResearchProgress('1/4 전체 회차 검증 완료 · 토너먼트 준비', 0, 100, 0, 50);
   const startedAt = Date.now();
 
   try {
