@@ -994,20 +994,46 @@ function renderResearchResults() {
 
 function renderResearchLab() {
   const count = draws.length;
+  const engineReady = Boolean(window.Lucky645Research);
   if ($('researchDrawCount')) $('researchDrawCount').textContent = formatNumber(count);
   if ($('researchRoundRange')) $('researchRoundRange').textContent = count ? draws[0].round+'회 ~ '+draws.at(-1).round+'회' : '데이터 확인 대기';
   if ($('researchCandidateCount')) $('researchCandidateCount').textContent = String(researchCandidates.length);
   if ($('researchCandidateBadge')) $('researchCandidateBadge').textContent = researchCandidates.length+'개 후보';
   if ($('researchDataStatus')) {
-    $('researchDataStatus').textContent = dataReady && count >= 150 ? '전체 연속 데이터 확인' : '데이터 검증 필요';
-    $('researchDataStatus').className = 'badge '+(dataReady && count >= 150 ? 'green' : 'yellow');
+    const ready = dataReady && count >= 150;
+    $('researchDataStatus').textContent = !engineReady ? '연구 엔진 로드 확인 필요' : (ready ? '전체 연속 데이터 확인' : '연속성 검사 필요');
+    $('researchDataStatus').className = 'badge '+(ready && engineReady ? 'green' : 'yellow');
   }
   const button = $('runResearchBtn');
-  if (button) button.disabled = researchRunning || !dataReady || count < 150 || !window.Lucky645Research;
+  if (button) {
+    // 데이터/엔진이 준비되지 않았더라도 버튼은 눌러서 구체적인 진단 메시지를 볼 수 있게 합니다.
+    button.disabled = researchRunning;
+    button.textContent = researchRunning ? '연구 실행 중…' : (researchReport ? '⚗ 전체 연구 다시 실행' : '⚗ 전체 연구 시작');
+    button.title = researchRunning ? '현재 연구가 진행 중입니다.' : '실행하면 데이터 무결성을 먼저 검사하고 100개 전략 및 100만 회 시뮬레이션을 시작합니다.';
+    button.setAttribute('aria-busy', researchRunning ? 'true' : 'false');
+  }
   if ($('researchCandidateList')) {
     $('researchCandidateList').innerHTML = researchCandidates.length
       ? '<div class="table-wrap"><table class="analytics-table"><thead><tr><th>전략</th><th>검증 회차</th><th>평균 일치 차이</th><th>z 점수</th><th>등록 시각</th></tr></thead><tbody>'+researchCandidates.map(item=>'<tr><td>'+escapeHtml(item.label)+'</td><td>'+formatNumber(item.testCount)+'회</td><td>+'+Number(item.delta).toFixed(4)+'</td><td>'+Number(item.zScore).toFixed(2)+'</td><td>'+escapeHtml(formatSyncTime(item.createdAt))+'</td></tr>').join('')+'</tbody></table></div><div class="analytics-legend">후보는 연구 기록으로만 저장됩니다. 실제 추천 조합 생성이나 구매에는 자동 반영되지 않습니다.</div>'
       : '<div class="empty">아직 등록된 후보가 없습니다. 유의미한 개선이 검증되지 않으면 0개로 유지됩니다.</div>';
+  }
+  const message = $('researchRunMessage');
+  if (message && !researchRunning) {
+    message.className = 'notice research-run-message';
+    if (!engineReady) {
+      message.textContent = '연구 엔진 스크립트를 불러오지 못했습니다. 페이지를 새로고침한 뒤에도 계속되면 관리자 확인이 필요합니다.';
+      message.classList.add('research-message-error');
+    } else if (count < 150) {
+      message.textContent = '회차 데이터가 '+count+'개입니다. 최소 150회 이상의 유효한 연속 회차가 필요합니다. 데이터 연결이 끝난 뒤 다시 실행해 주세요.';
+      message.classList.add('research-message-warning');
+    } else if (!dataReady) {
+      message.textContent = '화면의 누적 데이터 연속성 검사가 아직 통과되지 않았습니다. 실행 버튼을 누르면 연구 엔진이 회차 누락과 번호 형식을 다시 검사하고, 검사 결과를 이곳에 표시합니다.';
+      message.classList.add('research-message-warning');
+    } else if (researchReport) {
+      message.textContent = '마지막 연구 완료: '+formatSyncTime(researchReport.createdAt)+' · '+formatNumber(researchReport.drawCount)+'회 데이터 · 100개 전략 · '+formatNumber(researchReport.simulationCount)+'회 시뮬레이션. 다시 실행하면 결과를 새로 계산합니다.';
+    } else {
+      message.textContent = '데이터 '+formatNumber(count)+'회가 준비되었습니다. 버튼을 누르면 ① 전체 회차 검증 ② 100개 전략 비교 ③ 몬테카를로 1,000,000회 순서로 실제 계산합니다. 각 단계의 진행률이 표시됩니다.';
+    }
   }
   renderResearchResults();
 }
@@ -1021,22 +1047,61 @@ function updateResearchProgress(label, completed, total, stageOffset, stageScale
 
 async function runResearchLab() {
   if (researchRunning) return;
-  if (!dataReady || draws.length < 150) return toast('전체 회차의 연속성 검증을 완료한 뒤 실행해 주세요.');
-  if (!window.Lucky645Research) return toast('연구 엔진을 불러오지 못했습니다. 페이지를 새로고침해 주세요.');
-  researchRunning = true;
-  $('runResearchBtn').disabled = true;
-  $('runResearchBtn').textContent = '연구 실행 중…';
-  $('researchProgressWrap').style.display = 'block';
-  $('researchRunMessage').textContent = '전체 회차를 시간순으로 분리하고 100개 전략을 검증합니다.';
-  updateResearchProgress('100개 전략 평가 준비', 0, 100, 0, 50);
+  const message = $('researchRunMessage');
+  const button = $('runResearchBtn');
+  const showMessage = (text, tone = 'normal') => {
+    if (message) {
+      message.textContent = text;
+      message.className = 'notice research-run-message'+(tone === 'error' ? ' research-message-error' : tone === 'warning' ? ' research-message-warning' : '');
+    }
+    if (button) button.disabled = false;
+  };
+
+  // 이전에는 이 조건들이 버튼 자체를 비활성화하거나 토스트만 띄워 사용자가 이유를 알 수 없었습니다.
+  if (!window.Lucky645Research) {
+    showMessage('실행 중단: 연구 엔진 스크립트가 로드되지 않았습니다. research.js 요청 상태와 브라우저 캐시를 확인해 주세요.', 'error');
+    return;
+  }
+
+  let validatedDraws;
   try {
-    const report = await window.Lucky645Research.runStudy(draws, { strategyCount: 100, simulations: 1000000 }, progress => {
+    validatedDraws = window.Lucky645Research.normalizeDraws(draws);
+  } catch (error) {
+    showMessage('데이터 사전 검사 실패: '+error.message+' 현재 확보 회차 '+draws.length+'개. 회차 데이터가 완전히 연결된 후 다시 실행해 주세요.', 'warning');
+    if (typeof toast === 'function') toast('연구 실행 조건을 확인해 주세요. 자세한 내용은 연구소 상태 메시지를 확인하세요.');
+    return;
+  }
+
+  if (validatedDraws.length < 150) {
+    showMessage('실행 중단: 검증 데이터가 '+validatedDraws.length+'회입니다. 최소 150회가 필요합니다.', 'warning');
+    return;
+  }
+
+  researchRunning = true;
+  if (button) {
+    button.disabled = true;
+    button.textContent = '연구 준비 중…';
+    button.setAttribute('aria-busy', 'true');
+  }
+  if ($('researchProgressWrap')) $('researchProgressWrap').style.display = 'block';
+  if ($('researchProgressBar')) $('researchProgressBar').style.width = '0%';
+  if ($('researchRunMessage')) $('researchRunMessage').textContent = '데이터 사전 검사 통과: '+formatNumber(validatedDraws.length)+'개 회차. 이제 100개 전략을 평가합니다.';
+  updateResearchProgress('1/3 전체 회차 검증 완료 · 전략 평가 준비', 0, 100, 0, 50);
+  const startedAt = Date.now();
+
+  try {
+    const report = await window.Lucky645Research.runStudy(validatedDraws, { strategyCount: 100, simulations: 1000000 }, progress => {
       if (progress.stage === 'strategies') {
-        updateResearchProgress('전략 평가 '+progress.completed+' / '+progress.total, progress.completed, progress.total, 0, 50);
+        if (button) button.textContent = '전략 평가 '+progress.completed+'/'+progress.total;
+        updateResearchProgress('2/3 전략 평가 '+progress.completed+' / '+progress.total, progress.completed, progress.total, 0, 50);
+        if (message) message.textContent = '100개 전략을 실제 검증 구간에 적용 중입니다. '+progress.completed+' / '+progress.total+'개 완료.';
       } else {
-        updateResearchProgress('몬테카를로 '+formatNumber(progress.completed)+' / '+formatNumber(progress.total), progress.completed, progress.total, 50, 50);
+        if (button) button.textContent = '시뮬레이션 '+formatNumber(progress.completed)+'회';
+        updateResearchProgress('3/3 몬테카를로 '+formatNumber(progress.completed)+' / '+formatNumber(progress.total), progress.completed, progress.total, 50, 50);
+        if (message) message.textContent = '몬테카를로 무작위 추첨 계산 중입니다. '+formatNumber(progress.completed)+' / '+formatNumber(progress.total)+'회 완료.';
       }
     });
+    report.elapsedMs = Date.now() - startedAt;
     researchReport = report;
     const existing = new Set(researchCandidates.map(item=>item.id));
     const newCandidates = report.evaluation.strategies.filter(item=>item.adjustedSignificance && !existing.has(item.id));
@@ -1046,18 +1111,25 @@ async function runResearchLab() {
       testCount:item.testCount, delta:item.delta, zScore:item.zScore, createdAt
     }));
     researchCandidates = researchCandidates.slice(0,100);
-    persistResearchState();
+    const persisted = persistResearchState();
     renderResearchLab();
     updateResearchProgress('연구 완료', 1, 1, 100, 0);
-    $('researchRunMessage').textContent = '연구 완료: 전체 '+formatNumber(report.drawCount)+'회, 전략 '+report.strategyCount+'개, 몬테카를로 '+formatNumber(report.simulationCount)+'회. 새 후보 '+newCandidates.length+'개를 등록했습니다. '+(newCandidates.length?'등록 후보는 별도 검토가 필요합니다.':'통계적으로 검증된 개선 후보는 없습니다.');
+    const completion = '연구 완료: '+formatNumber(report.drawCount)+'회 데이터 · 전략 '+report.strategyCount+'개 · 몬테카를로 '+formatNumber(report.simulationCount)+'회 · 소요 '+(report.elapsedMs/1000).toFixed(1)+'초 · 새 후보 '+newCandidates.length+'개.';
+    showMessage(completion+(persisted?' 결과와 후보 목록을 이 브라우저에 저장했습니다.':' 계산은 완료했지만 브라우저 저장에 실패했습니다. 저장 공간을 확인해 주세요.'), persisted?'normal':'warning');
     toast('LUCKY 645 연구 완료 · 후보 '+newCandidates.length+'개');
   } catch (error) {
-    $('researchRunMessage').textContent = '연구 실행 실패: '+error.message;
-    toast('연구 실행 실패: '+error.message);
+    const detail = error && error.message ? error.message : String(error);
+    showMessage('연구 실행 오류: '+detail+' 진행률과 브라우저 콘솔을 확인해 주세요.', 'error');
+    toast('연구 실행 오류가 발생했습니다.');
   } finally {
     researchRunning = false;
-    $('runResearchBtn').textContent = '⚗ 전체 연구 다시 실행';
+    if (button) {
+      button.disabled = false;
+      button.textContent = '⚗ 전체 연구 다시 실행';
+      button.setAttribute('aria-busy', 'false');
+    }
     renderResearchLab();
+    // 완료/실패 메시지는 renderResearchLab의 기본 안내문보다 우선합니다.
   }
 }
 
