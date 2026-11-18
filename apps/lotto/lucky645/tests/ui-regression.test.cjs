@@ -174,3 +174,14 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(app, /runResearchLab/);
   assert.match(app, /RESEARCH_CANDIDATES_KEY/);
 });
+
+
+test('research control stays clickable for actionable preflight diagnostics', () => {
+  const section = html.slice(html.indexOf('id="page-research"'), html.indexOf('id="page-checker"'));
+  assert.match(section, /id="runResearchBtn"[^>]*aria-busy="false"/);
+  assert.doesNotMatch(section, /id="runResearchBtn"[^>]*disabled/);
+  assert.match(section, /id="researchRunMessage"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(app, /button\.disabled = researchRunning;/);
+  assert.match(app, /데이터 사전 검사 실패:/);
+  assert.match(app, /전략 평가 \+progress\.completed/);
+});
