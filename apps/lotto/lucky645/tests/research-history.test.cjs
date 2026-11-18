@@ -109,3 +109,52 @@ test('run comparison summary derives averages and best strategy metrics', () => 
   assert.equal(summary.topWinRate, 0.6);
   assert.equal(summary.baselineCount, 0);
 });
+
+const archive = require('../assets/research-history.js');
+
+function validReport(id, createdAt) {
+  return {
+    version: 2, runId: id, createdAt, drawCount: 200, firstRound: 1, lastRound: 200,
+    simulationCount: 1000000,
+    evaluation: { candidateCount: 0, strategies: [{
+      id: 'random-20', label: '무작위 · 20회', averageMatches: 0.8,
+      baselineAverage: 0.79, delta: 0.01, zScore: 0.5
+    }] }
+  };
+}
+
+test('validates the exported research archive schema and normalizes timestamps', () => {
+  const rows = archive.normalizeArchive({
+    schema: 'lucky645-research-history-v1',
+    runs: [validReport('run-a', '2026-11-18T00:00:00.000Z')]
+  });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].runId, 'run-a');
+  assert.equal(rows[0].createdAt, '2026-11-18T00:00:00.000Z');
+});
+
+test('rejects the complete archive if any report is invalid', () => {
+  assert.throws(() => archive.normalizeArchive({
+    schema: 'lucky645-research-history-v1',
+    runs: [validReport('run-a', '2026-11-18T00:00:00.000Z'), { version: 2 }]
+  }));
+});
+
+test('rejects malformed metrics, invalid dates and oversized strategy sets', () => {
+  const invalidMetric = validReport('bad', '2026-11-18T00:00:00.000Z');
+  invalidMetric.evaluation.strategies[0].averageMatches = 9;
+  assert.throws(() => archive.normalizeReport(invalidMetric));
+  const invalidDate = validReport('bad-date', 'not-a-date');
+  assert.throws(() => archive.normalizeReport(invalidDate));
+  const tooMany = validReport('many', '2026-11-18T00:00:00.000Z');
+  tooMany.evaluation.strategies = Array.from({length:101}, (_,i)=>({...tooMany.evaluation.strategies[0],id:'s'+i}));
+  assert.throws(() => archive.normalizeReport(tooMany));
+});
+
+test('merges by run id, keeps newest copy and caps local history at twelve', () => {
+  const oldRows = Array.from({length:14}, (_,i)=>validReport('run-'+i,new Date(Date.UTC(2026,0,i+1)).toISOString()));
+  const merged = archive.mergeRuns(oldRows,[validReport('run-13','2026-02-01T00:00:00.000Z')]);
+  assert.equal(merged.length,12);
+  assert.equal(merged[0].runId,'run-13');
+  assert.equal(merged.filter(row=>row.runId==='run-13').length,1);
+});
