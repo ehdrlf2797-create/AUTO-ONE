@@ -185,3 +185,20 @@ test('saved backtest now precomputes draw lookups and prize tables only once', (
   assert.match(appSource,/prizeByRank/);
 });
 
+test('portfolio evaluator returns identical metrics for arrays and precomputed winning-number sets', () => {
+  const context=makeContext();
+  const tickets=[
+    [1,2,3,4,5,6],
+    [1,7,8,9,10,11],
+    [12,13,14,15,16,17]
+  ];
+  const draw=[1,2,3,8,9,44];
+  const fromArray=context.evaluateTicketPortfolio(tickets,draw);
+  const fromSet=context.evaluateTicketPortfolio(tickets,new Set(draw));
+  assert.deepEqual(
+    {coverage:fromArray.coverage,maxExposure:fromArray.maxExposure,any3:fromArray.any3,any4:fromArray.any4,any5:fromArray.any5,any6:fromArray.any6},
+    {coverage:fromSet.coverage,maxExposure:fromSet.maxExposure,any3:fromSet.any3,any4:fromSet.any4,any5:fromSet.any5,any6:fromSet.any6}
+  );
+  assert.equal(fromSet.coverage,17);
+  assert.equal(fromSet.any3,true);
+});
