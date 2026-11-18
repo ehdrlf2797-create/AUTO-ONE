@@ -23,11 +23,19 @@ function asInteger(value) {
 }
 
 function normalizeDate(value) {
-  if (!value) return null;
+  if (value == null || value === '') return null;
   const text = String(value).trim();
-  if (/^\d{8}$/.test(text)) return text.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
-  return null;
+  let normalized = null;
+  if (/^\d{8}$/.test(text)) {
+    normalized = text.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    normalized = text;
+  }
+  if (!normalized) return null;
+  const parsed = new Date(`${normalized}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0,10) !== normalized
+    ? null
+    : normalized;
 }
 
 function normalizeDraw(raw) {
@@ -54,28 +62,42 @@ function normalizeDraw(raw) {
     return null;
   }
 
+  const dateValue = raw.date || raw.ltRflYmd || raw.drwNoDate;
+  const date = normalizeDate(dateValue);
+  if (dateValue && !date) return null;
+
   let ranks;
   if (Array.isArray(raw.ranks)) {
-    ranks = raw.ranks.map(item => ({
-      rank: asInteger(item?.rank),
-      prize: item?.prize == null ? null : asInteger(item.prize),
-      winners: item?.winners == null ? null : asInteger(item.winners)
-    })).filter(item => item.rank !== null && item.rank >= 1 && item.rank <= 5);
+    ranks = raw.ranks.map(item => {
+      const rank = asInteger(item?.rank);
+      const rawPrize = item?.prize == null ? null : asInteger(item.prize);
+      const rawWinners = item?.winners == null ? null : asInteger(item.winners);
+      return {
+        rank,
+        prize: rawPrize !== null && rawPrize >= 0 ? rawPrize : null,
+        winners: rawWinners !== null && rawWinners >= 0 ? rawWinners : null
+      };
+    }).filter(item => item.rank !== null && item.rank >= 1 && item.rank <= 5);
   } else {
-    ranks = [1, 2, 3, 4, 5].map(rank => ({
-      rank,
-      prize: asInteger(raw[`rnk${rank}WnAmt`]),
-      winners: asInteger(raw[`rnk${rank}WnNope`])
-    })).filter(item => item.prize !== null || item.winners !== null);
+    ranks = [1, 2, 3, 4, 5].map(rank => {
+      const rawPrize = asInteger(raw[`rnk${rank}WnAmt`]);
+      const rawWinners = asInteger(raw[`rnk${rank}WnNope`]);
+      return {
+        rank,
+        prize: rawPrize !== null && rawPrize >= 0 ? rawPrize : null,
+        winners: rawWinners !== null && rawWinners >= 0 ? rawWinners : null
+      };
+    }).filter(item => item.prize !== null || item.winners !== null);
   }
 
+  const rawSales = asInteger(raw.totalSales ?? raw.wholEpsdSumNtslAmt);
   return {
     round,
-    date: normalizeDate(raw.date ?? raw.ltRflYmd ?? raw.drwNoDate),
+    date,
     numbers: [...numbers].sort((a, b) => a - b),
     bonus,
     ranks,
-    totalSales: asInteger(raw.totalSales ?? raw.wholEpsdSumNtslAmt),
+    totalSales: rawSales !== null && rawSales >= 0 ? rawSales : null,
     source: typeof raw.source === 'string' ? raw.source : undefined
   };
 }
@@ -85,8 +107,15 @@ function extractOfficialLatest(payload) {
     payload?.data?.result?.pstLtEpstInfo?.lt645 ??
     payload?.list;
   if (Array.isArray(rows)) {
-    const valid = rows.map(normalizeDraw).filter(Boolean).sort((a, b) => b.round - a.round);
-    return valid[0] || null;
+    const newest = rows
+      .map(raw => ({
+        raw,
+        round: asInteger(raw?.round ?? raw?.draw_no ?? raw?.ltEpsd ?? raw?.drwNo)
+      }))
+      .filter(item => item.round !== null)
+      .sort((a, b) => b.round - a.round)[0];
+    // 최신 원본 행이 잘못된 경우 과거의 유효한 회차를 최신 결과로 가장하지 않습니다.
+    return newest ? normalizeDraw(newest.raw) : null;
   }
   return normalizeDraw(payload?.data ?? payload);
 }
@@ -253,6 +282,8 @@ async function handler(req, res) {
 
     if (kind === 'status') {
       return sendJson(res, 200, {
+        cacheScope: 'serverless-instance-memory',
+        cacheNote: '이 상태는 현재 서버리스 인스턴스의 메모리 캐시만 나타냅니다. 다른 인스턴스의 캐시 상태를 대표하지 않습니다.',
         history: {
           available: Boolean(CACHE.history),
           rounds: CACHE.history?.length || 0,
@@ -280,6 +311,7 @@ async function handler(req, res) {
 
 module.exports = handler;
 module.exports.__test = {
+  normalizeDate,
   normalizeDraw,
   extractOfficialLatest,
   extractHistory,
