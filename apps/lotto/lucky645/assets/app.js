@@ -51,6 +51,7 @@ let latestVerification = 'pending';
 let dataReady = false;
 let activeMode = 'random';
 let generated = [];
+let generatedMode = 'random';
 let includeNums = [];
 let excludeNums = [];
 let manualNums = [];
@@ -2215,6 +2216,7 @@ function generateNumbers() {
     return;
   }
   generated=next;
+  generatedMode=activeMode;
   renderGenerated();
   if (generated.length<quantity) toast(`${generated.length}개 조합을 만들었습니다. 조건을 만족하는 서로 다른 조합이 부족합니다.`);
   else if (activeMode==='stats') { const count=drawsForStatsWeighting().length; toast(`${count}회 데이터의 출현 빈도를 약하게 반영했습니다. 당첨 확률은 동일합니다.`); }
@@ -2249,7 +2251,7 @@ function saveCombination(numbers,mode=activeMode) {
 
 function saveAllGenerated() {
   if(!generated.length) return toast('먼저 번호 조합을 생성해 주세요.');
-  const prepared=buildBulkSavedEntries(generated,saved,activeMode);
+  const prepared=buildBulkSavedEntries(generated,saved,generatedMode);
   if(!prepared.added){
     renderGenerated();
     if(prepared.duplicateCount||prepared.invalidCount) {
@@ -2739,7 +2741,7 @@ function bindEvents() {
   $('results').addEventListener('click',event=>{
     const save=event.target.closest('[data-save-result]');
     const copy=event.target.closest('[data-copy-result]');
-    if (save) saveCombination(generated[Number(save.dataset.saveResult)]);
+    if (save) saveCombination(generated[Number(save.dataset.saveResult)],generatedMode);
     if (copy) copyNumbers(generated[Number(copy.dataset.copyResult)]);
   });
   document.querySelectorAll('[data-saved-filter]').forEach(button=>button.addEventListener('click',()=>{savedFilter=button.dataset.savedFilter;renderSaved();}));
