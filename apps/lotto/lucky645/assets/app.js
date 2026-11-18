@@ -1020,6 +1020,10 @@ function renderResearchLab() {
       : '<div class="empty">아직 등록된 후보가 없습니다. 유의미한 개선이 검증되지 않으면 0개로 유지됩니다.</div>';
   }
   const message = $('researchRunMessage');
+  if (!researchRunning && dataReady && !researchReport && researchLastRunTone === 'warning') {
+    researchLastRunMessage = '';
+    researchLastRunTone = 'normal';
+  }
   if (message && !researchRunning) {
     message.className = 'notice research-run-message';
     if (researchLastRunMessage) {
@@ -1062,7 +1066,7 @@ async function runResearchLab() {
       message.textContent = text;
       message.className = 'notice research-run-message'+(tone === 'error' ? ' research-message-error' : tone === 'warning' ? ' research-message-warning' : '');
     }
-    if (button) button.disabled = false;
+    if (button) button.disabled = researchRunning;
   };
 
   // 이전에는 이 조건들이 버튼 자체를 비활성화하거나 토스트만 띄워 사용자가 이유를 알 수 없었습니다.
