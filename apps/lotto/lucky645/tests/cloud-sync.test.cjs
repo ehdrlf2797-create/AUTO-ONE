@@ -286,3 +286,44 @@ test('cloud sync suppresses old duplicate copies but permits a later re-save', (
   },tombstones),true);
   assert.match(appSource, /payload:row\.numbers_key\?\{numbers_key:row\.numbers_key\}:\{\}/);
 });
+
+test('cloud sync paginates all remote rows instead of truncating at the REST row limit', async () => {
+  const start=appSource.indexOf('async function fetchAllCloudRows(');
+  const end=appSource.indexOf('\nasync function cloudUpsert(',start);
+  assert.notEqual(start,-1);
+  assert.notEqual(end,-1);
+  const requests=[];
+  const context={
+    async cloudRequest(url,options,token){
+      requests.push({url,options,token});
+      const offset=Number(new URL(url,'https://local.invalid').searchParams.get('offset'));
+      if(offset===0)return Array.from({length:1000},(_,i)=>({id:String(i)}));
+      if(offset===1000)return Array.from({length:200},(_,i)=>({id:String(1000+i)}));
+      return [];
+    }
+  };
+  vm.runInNewContext(appSource.slice(start,end)+'\nthis.fetchAllCloudRows=fetchAllCloudRows;',context);
+  const rows=await context.fetchAllCloudRows('test-token');
+  assert.equal(rows.length,1200);
+  assert.deepEqual(requests.map(item=>Number(new URL(item.url,'https://local.invalid').searchParams.get('offset'))),[0,1000]);
+  assert.ok(requests.every(item=>item.token==='test-token'));
+});
+
+test('cloud upsert sends large history collections in bounded batches', async () => {
+  const start=appSource.indexOf('async function cloudUpsert(');
+  const end=appSource.indexOf('\nasync function performCloudSync()',start);
+  assert.notEqual(start,-1);
+  assert.notEqual(end,-1);
+  const requests=[];
+  const context={
+    cloudSession:{user:{id:'user-a'}},
+    async cloudRequest(url,options,token){requests.push({url,options,token});}
+  };
+  vm.runInNewContext(appSource.slice(start,end)+'\nthis.cloudUpsert=cloudUpsert;',context);
+  const rows=Array.from({length:501},(_,index)=>({
+    category:'check_history',record_key:String(index),payload:{round:index+1},deleted_at:null
+  }));
+  await context.cloudUpsert(rows,'test-token');
+  assert.deepEqual(requests.map(request=>JSON.parse(request.options.body).length),[250,250,1]);
+  assert.ok(requests.every(request=>request.token==='test-token'));
+});
