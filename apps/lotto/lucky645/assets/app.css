@@ -425,3 +425,30 @@ td{color:#e0e8f0}
   .mobile-nav::-webkit-scrollbar{display:none}
   .mobile-nav button{flex:0 0 58px}
 }
+
+
+/* Generator portfolio summary and one-click save */
+.generator-result-head{align-items:center;flex-wrap:wrap}
+.generator-result-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.generator-result-actions button{white-space:nowrap}
+.generator-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:12px 0 14px;padding:12px;background:#111923;border:1px solid var(--line);border-radius:12px}
+.generator-metric{display:grid;gap:5px;align-content:center;min-width:0}
+.generator-metric span{font-size:10px;color:var(--muted)}
+.generator-metric strong{font-size:17px;color:#e7edf3;overflow-wrap:anywhere}
+.generator-metric.generator-odds{grid-column:span 2;padding-left:12px;border-left:1px solid var(--line)}
+.generator-metric.generator-odds strong{font-size:13px;color:var(--lime)}
+.generator-metric.generator-odds small{font-size:10px;color:var(--muted)}
+.generator-summary-note{grid-column:1/-1;border-top:1px solid var(--line);padding-top:9px;color:var(--muted);font-size:10px;line-height:1.5}
+.mini-btn:disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--muted)}
+@media(max-width:760px){
+  .generator-result-head{align-items:flex-start}
+  .generator-result-actions{width:100%;display:grid;grid-template-columns:auto minmax(120px,1fr)}
+  .generator-result-actions button{width:100%;padding:10px 9px}
+  .generator-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .generator-metric.generator-odds{grid-column:1/-1;padding:10px 0 0;border-left:0;border-top:1px solid var(--line)}
+  .generator-metric strong{font-size:15px}
+  .generator-metric.generator-odds strong{font-size:13px}
+  .result-row{flex-wrap:wrap}
+  .result-actions{flex-direction:row;justify-content:flex-end;width:100%}
+  .result-actions button{flex:1}
+}
