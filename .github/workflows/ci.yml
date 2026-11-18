@@ -12,8 +12,8 @@ permissions:
 
 jobs:
   python-quality:
-    name: Python ${gh} matrix.python-version }} / ${gh} matrix.os }}
-    runs-on: ${gh} matrix.os }}
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +34,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: ${gh} matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install project
