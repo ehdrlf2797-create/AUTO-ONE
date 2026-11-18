@@ -1700,9 +1700,18 @@ function loadCloudTombstones() {
 function persistCloudTombstones(rows) {
   try { localStorage.setItem(cloudTombstonesStorageKey(), JSON.stringify(rows.slice(-50000))); } catch (_) {}
 }
-function markCloudDeleted(category, recordKey) {
+function markCloudDeleted(category, recordKey, metadata = null) {
   const rows=loadCloudTombstones(), key=String(recordKey);
-  if(!rows.some(row=>row.category===category && row.record_key===key)) rows.push({category,record_key:key,deleted_at:new Date().toISOString()});
+  const numbersKey = category==='saved_combination' && Array.isArray(metadata) &&
+    metadata.length===6 && metadata.every(number=>Number.isInteger(Number(number))&&Number(number)>=1&&Number(number)<=45)
+      ? sortNums(metadata.map(Number)).join('-')
+      : null;
+  const existing = rows.find(row=>row.category===category && row.record_key===key);
+  if(existing) {
+    if(numbersKey) existing.numbers_key=numbersKey;
+  } else {
+    rows.push({category,record_key:key,deleted_at:new Date().toISOString(),...(numbersKey?{numbers_key:numbersKey}:{})});
+  }
   persistCloudTombstones(rows);
   scheduleCloudSync();
 }
@@ -1857,9 +1866,24 @@ async function performCloudSync() {
   if(!token)throw new Error('로그인 세션이 만료됐습니다. 다시 로그인해 주세요.');
   const remote=await cloudRequest('/rest/v1/lucky645_sync_records?select=category,record_key,payload,deleted_at,updated_at&order=updated_at.asc',{method:'GET'},token);
   const tombstoneMap=new Map(loadCloudTombstones().map(row=>[row.category+':'+row.record_key,row]));
-  (remote||[]).filter(row=>row.deleted_at).forEach(row=>tombstoneMap.set(row.category+':'+row.record_key,{category:row.category,record_key:row.record_key,deleted_at:row.deleted_at}));
+  (remote||[]).filter(row=>row.deleted_at).forEach(row=>tombstoneMap.set(row.category+':'+row.record_key,{
+    category:row.category,
+    record_key:row.record_key,
+    deleted_at:row.deleted_at,
+    ...(typeof row.payload?.numbers_key==='string'?{numbers_key:row.payload.numbers_key}:{})
+  }));
   const deleted=new Set([...tombstoneMap.keys()]);
-  const remoteActive=(remote||[]).filter(row=>!row.deleted_at&&!deleted.has(row.category+':'+row.record_key));
+  const deletedSavedNumbers=new Set([...tombstoneMap.values()]
+    .filter(row=>row.category==='saved_combination'&&typeof row.numbers_key==='string')
+    .map(row=>row.numbers_key));
+  const remoteActive=(remote||[]).filter(row=>{
+    if(row.deleted_at||deleted.has(row.category+':'+row.record_key)) return false;
+    if(row.category==='saved_combination'&&Array.isArray(row.payload?.numbers)){
+      const key=sortNums(row.payload.numbers.map(Number)).join('-');
+      if(deletedSavedNumbers.has(key)) return false;
+    }
+    return true;
+  });
   const localSavedByNumbers=new Map(saved.map(item=>[item.numbers.join('-'),item]));
   const remoteSavedById=new Map();
 
@@ -1879,7 +1903,7 @@ async function performCloudSync() {
     // 여러 기기에서 같은 번호가 각각 생성되었더라도 저장 조합은 한 개로 합칩니다.
     if(String(row.record_key)!==String(local.id)){
       tombstoneMap.set('saved_combination:'+String(row.record_key),{
-        category:'saved_combination',record_key:String(row.record_key),deleted_at:new Date().toISOString()
+        category:'saved_combination',record_key:String(row.record_key),deleted_at:new Date().toISOString(),numbers_key:key
       });
     }
   });
@@ -1909,7 +1933,7 @@ async function performCloudSync() {
     autoCheckMeta={...remoteState,lastRound:Math.min(remoteRound,newestKnownRound)};
   }
 
-  saved=saved.filter(item=>!deleted.has('saved_combination:'+String(item.id)));
+  saved=saved.filter(item=>!deleted.has('saved_combination:'+String(item.id))&&!deletedSavedNumbers.has(item.numbers.join('-')));
   savedCheckHistory=savedCheckHistory.filter(item=>!deleted.has('check_history:'+String(item.id||item.round+':'+item.savedId)));
   persistCloudTombstones([...tombstoneMap.values()]);
   cloudApplying=true;
@@ -1924,8 +1948,22 @@ async function performCloudSync() {
   if(savedBacktestResult) runSavedBacktest();
 
   const finalDeleted=new Set([...tombstoneMap.keys()]);
-  const activeRows=buildLocalCloudRows().filter(row=>!finalDeleted.has(row.category+':'+row.record_key));
-  const deletedRows=[...tombstoneMap.values()].map(row=>({category:row.category,record_key:row.record_key,payload:{},deleted_at:row.deleted_at}));
+  const finalDeletedSavedNumbers=new Set([...tombstoneMap.values()]
+    .filter(row=>row.category==='saved_combination'&&typeof row.numbers_key==='string')
+    .map(row=>row.numbers_key));
+  const activeRows=buildLocalCloudRows().filter(row=>{
+    if(finalDeleted.has(row.category+':'+row.record_key)) return false;
+    if(row.category==='saved_combination'&&Array.isArray(row.payload?.numbers)){
+      return !finalDeletedSavedNumbers.has(sortNums(row.payload.numbers).join('-'));
+    }
+    return true;
+  });
+  const deletedRows=[...tombstoneMap.values()].map(row=>({
+    category:row.category,
+    record_key:row.record_key,
+    payload:row.numbers_key?{numbers_key:row.numbers_key}:{},
+    deleted_at:row.deleted_at
+  }));
   await cloudUpsert([...activeRows,...deletedRows],token);
   if(message)message.textContent='동기화 완료: 저장 조합 '+saved.length+'개 · 확인 이력 '+savedCheckHistory.length+'건. 이 기기와 클라우드 데이터를 병합했습니다.';
 }
@@ -1992,7 +2030,7 @@ function bindEvents() {
   $('manualCheckBtn').addEventListener('click',checkManualNumbers);
   $('clearSavedBtn').addEventListener('click',()=>{
     if (!saved.length) return;
-    if (confirm('저장한 번호를 모두 삭제할까요?')) { saved.forEach(entry=>markCloudDeleted('saved_combination',String(entry.id))); saved=[];persistSaved();toast('보관함을 비웠습니다.'); }
+    if (confirm('저장한 번호를 모두 삭제할까요?')) { saved.forEach(entry=>markCloudDeleted('saved_combination',String(entry.id),entry.numbers)); saved=[];persistSaved();toast('보관함을 비웠습니다.'); }
   });
   $('historySearchBtn').addEventListener('click',async()=>{
     const round=Number($('historySearch').value);
@@ -2028,7 +2066,7 @@ function bindEvents() {
     const copy=event.target.closest('[data-copy-saved]');
     const favorite=event.target.closest('[data-favorite-saved]');
     if (favorite) toggleSavedFavorite(Number(favorite.dataset.favoriteSaved));
-    if (remove) { const removed=saved[Number(remove.dataset.deleteSaved)]; if(removed) markCloudDeleted('saved_combination',String(removed.id)); saved.splice(Number(remove.dataset.deleteSaved),1);persistSaved();toast('번호를 삭제했습니다.'); }
+    if (remove) { const removed=saved[Number(remove.dataset.deleteSaved)]; if(removed) markCloudDeleted('saved_combination',String(removed.id),removed.numbers); saved.splice(Number(remove.dataset.deleteSaved),1);persistSaved();toast('번호를 삭제했습니다.'); }
     if (copy) copyNumbers(saved[Number(copy.dataset.copySaved)].numbers);
   });
 }
