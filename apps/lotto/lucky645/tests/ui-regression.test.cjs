@@ -183,5 +183,6 @@ test('research control stays clickable for actionable preflight diagnostics', ()
   assert.match(section, /id="researchRunMessage"[^>]*role="status"[^>]*aria-live="polite"/);
   assert.match(app, /button\.disabled = researchRunning;/);
   assert.match(app, /데이터 사전 검사 실패:/);
-  assert.match(app, /전략 평가 \+progress\.completed/);
+  assert.match(app, /updateResearchProgress\('2\/3 전략 평가 '/);
+  assert.match(app, /updateResearchProgress\('3\/3 몬테카를로 '/);
 });
