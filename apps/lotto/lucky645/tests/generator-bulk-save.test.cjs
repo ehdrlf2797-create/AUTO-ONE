@@ -157,3 +157,11 @@ test('persistSaved commits the entire collection with one successful storage wri
   assert.deepEqual(JSON.parse(writes[0][1]).map(item => item.id), ['new-a', 'new-b', 'existing']);
   assert.equal(renderCount, 1);
 });
+
+
+test('bulk and individual saves preserve the mode used to generate the current batch', () => {
+  assert.match(appSource, /let generatedMode = 'random'/);
+  assert.match(appSource, /generatedMode=activeMode/);
+  assert.match(appSource, /buildBulkSavedEntries\(generated,saved,generatedMode\)/);
+  assert.match(appSource, /saveCombination\(generated\[Number\(save\.dataset\.saveResult\)\],generatedMode\)/);
+});
