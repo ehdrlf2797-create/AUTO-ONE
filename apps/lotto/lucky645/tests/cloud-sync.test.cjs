@@ -237,3 +237,26 @@ test('cloud merge refreshes dependent backtest after data reconciliation', () =>
   assert.match(appSource, /if\(savedBacktestResult\) runSavedBacktest\(\);/);
   assert.match(appSource, /if\(dataReady && latestVerification==='official'\) autoCheckLatestDraw\(\);/);
 });
+
+test('saved-combination tombstones carry a number fingerprint for duplicate-device copies', () => {
+  const start = appSource.indexOf('function markCloudDeleted(');
+  const end = appSource.indexOf('\nfunction cloudHeaders(',start);
+  assert.notEqual(start,-1);
+  assert.notEqual(end,-1);
+  const context = {
+    loadCloudTombstones:()=>[],
+    persistCloudTombstones(rows){this.rows=rows;},
+    scheduleCloudSync(){this.scheduled=(this.scheduled||0)+1;},
+    sortNums(numbers){return [...numbers].sort((a,b)=>a-b);}
+  };
+  vm.runInNewContext(appSource.slice(start,end)+'\nthis.markCloudDeleted=markCloudDeleted;',context);
+  context.markCloudDeleted('saved_combination','device-a-id',[6,5,4,3,2,1]);
+  assert.equal(context.rows[0].numbers_key,'1-2-3-4-5-6');
+  assert.equal(context.scheduled,1);
+});
+
+test('cloud sync suppresses other-device copies by deleted combination fingerprint', () => {
+  assert.match(appSource, /deletedSavedNumbers\.has\(key\)/);
+  assert.match(appSource, /finalDeletedSavedNumbers\.has\(sortNums\(row\.payload\.numbers\)\.join\('-'\)\)/);
+  assert.match(appSource, /payload:row\.numbers_key\?\{numbers_key:row\.numbers_key\}:\{\}/);
+});
