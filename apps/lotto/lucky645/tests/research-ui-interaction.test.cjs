@@ -107,7 +107,7 @@ test('research preflight failures are shown in the lab instead of only a transie
   const context = makeContext(engine);
   await context.runResearchLab();
   assert.match(context.__nodes.researchRunMessage.textContent, /회차 81번 누락/);
-  assert.equal(context.__nodes.researchRunMessage.classList.contains('research-message-warning'), true);
+  assert.match(context.__nodes.researchRunMessage.className, /research-message-warning/);
   assert.equal(context.__nodes.runResearchBtn.disabled, false);
 });
 
