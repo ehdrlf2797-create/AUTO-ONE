@@ -956,19 +956,8 @@ function loadResearchReport() {
 function loadResearchHistory(currentReport) {
   try {
     const parsed = JSON.parse(localStorage.getItem(RESEARCH_HISTORY_KEY) || '[]');
-    const history = Array.isArray(parsed) ? parsed.filter(item =>
-      item && item.version >= 1 && Array.isArray(item.evaluation?.strategies) && item.createdAt
-    ) : [];
-    const currentId = currentReport && (currentReport.runId || currentReport.createdAt);
-    if (currentReport && !history.some(item => (item.runId || item.createdAt) === currentId)) {
-      history.unshift(currentReport);
-    }
-    return history
-      .sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-      .slice(0, MAX_RESEARCH_HISTORY);
-  } catch (_) {
-    return currentReport ? [currentReport] : [];
-  }
+    return window.Lucky645ResearchHistory.mergeRuns(currentReport ? [currentReport] : [], parsed);
+  } catch (_) { return currentReport ? [currentReport] : []; }
 }
 
 function recordResearchRun(report) {
@@ -987,13 +976,16 @@ function loadResearchCandidates() {
 }
 
 function persistResearchState() {
+  const keys = [RESEARCH_REPORT_KEY, RESEARCH_HISTORY_KEY, RESEARCH_CANDIDATES_KEY];
+  const previous = keys.map(key => localStorage.getItem(key));
   try {
     if (researchReport) localStorage.setItem(RESEARCH_REPORT_KEY, JSON.stringify(researchReport));
     localStorage.setItem(RESEARCH_HISTORY_KEY, JSON.stringify(researchHistory.slice(0, MAX_RESEARCH_HISTORY)));
     localStorage.setItem(RESEARCH_CANDIDATES_KEY, JSON.stringify(researchCandidates));
     return true;
   } catch (_) {
-    toast('연구 결과 저장 공간이 부족합니다. 이전 연구 기록을 백업하거나 정리해 주세요.');
+    keys.forEach((key,index) => { try { if (previous[index] === null) localStorage.removeItem(key); else localStorage.setItem(key, previous[index]); } catch (_) {} });
+    toast('연구 결과 저장 공간이 부족합니다. 기존 연구 이력은 유지했습니다.');
     return false;
   }
 }
@@ -1257,6 +1249,54 @@ function renderResearchHistory() {
       }).join('');
     }
   }
+}
+
+async function importResearchHistoryFile(file) {
+  if (!file) return;
+  if (file.size > MAX_BACKUP_FILE_SIZE) return toast('연구 이력 파일은 12MB 이하만 불러올 수 있습니다.');
+  try {
+    const raw = JSON.parse(await file.text());
+    const imported = window.Lucky645ResearchHistory.normalizeArchive(raw);
+    const merged = window.Lucky645ResearchHistory.mergeRuns(imported, researchHistory);
+    const oldIds = new Set(researchHistory.map(item => item.runId || item.createdAt));
+    const added = merged.filter(item => !oldIds.has(item.runId || item.createdAt)).length;
+    if (!confirm('검증된 연구 '+imported.length+'건을 확인했습니다. 기존 이력과 병합하고 최근 12건을 보관할까요?\n새로 추가될 연구: '+added+'건\n기존 기록은 덮어쓰지 않습니다.')) return;
+    const previous = { history: researchHistory, report: researchReport };
+    researchHistory = merged;
+    researchReport = merged[0] || researchReport;
+    if (!persistResearchState()) { researchHistory = previous.history; researchReport = previous.report; return; }
+    renderResearchLab();
+    if (cloudSession?.access_token) {
+      try { await syncResearchRuns(await cloudAccessToken()); }
+      catch (error) { if ($('cloudMessage')) $('cloudMessage').textContent = '로컬 복원은 완료했지만 클라우드 동기화는 보류됐습니다: '+error.message; }
+    }
+    toast('연구 이력 복원 완료: '+imported.length+'건 검사, '+added+'건 추가');
+  } catch (error) { toast('연구 이력 복원 실패: '+error.message); }
+}
+
+async function syncResearchRuns(token) {
+  if (!cloudSession?.user?.id || !token) return { uploaded: 0, downloaded: 0 };
+  const remote = await cloudRequest('/rest/v1/lucky645_research_runs?select=run_id,report,created_at,updated_at&order=created_at.desc&limit=1000', { method: 'GET' }, token);
+  if (!Array.isArray(remote)) throw new Error('클라우드 연구 이력 응답 형식이 올바르지 않습니다.');
+  const remoteReports = remote.map(row => {
+    const report = window.Lucky645ResearchHistory.normalizeReport(row.report);
+    if (String(row.run_id) !== report.runId) throw new Error('클라우드 연구 ID가 보고서와 일치하지 않습니다.');
+    return report;
+  });
+  const merged = window.Lucky645ResearchHistory.mergeRuns(remoteReports, researchHistory);
+  const remoteIds = new Set(remoteReports.map(item => item.runId));
+  const upload = researchHistory.filter(item => !remoteIds.has(item.runId || item.createdAt));
+  if (upload.length) {
+    const rows = upload.map(report => ({ user_id: cloudSession.user.id, run_id: report.runId || report.createdAt, report, created_at: report.createdAt, updated_at: new Date().toISOString() }));
+    await cloudRequest('/rest/v1/lucky645_research_runs?on_conflict=user_id,run_id', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows)
+    }, token);
+  }
+  researchHistory = merged;
+  if (merged.length && (!researchReport || Date.parse(merged[0].createdAt) > Date.parse(researchReport.createdAt))) researchReport = merged[0];
+  if (!persistResearchState()) throw new Error('클라우드 연구 이력은 읽었지만 이 기기의 저장 공간에 반영하지 못했습니다.');
+  renderResearchLab();
+  return { uploaded: upload.length, downloaded: remoteReports.length };
 }
 
 function exportResearchHistory() {
@@ -2996,7 +3036,8 @@ async function performCloudSync() {
     deleted_at:row.deleted_at
   }));
   await cloudUpsert([...activeRows,...deletedRows],token);
-  if(message)message.textContent='동기화 완료: 저장 조합 '+saved.length+'개 · 확인 이력 '+savedCheckHistory.length+'건. 이 기기와 클라우드 데이터를 병합했습니다.';
+  const researchSync = await syncResearchRuns(token);
+  if(message)message.textContent='동기화 완료: 저장 조합 '+saved.length+'개 · 확인 이력 '+savedCheckHistory.length+'건 · 연구 이력 '+researchHistory.length+'건 (클라우드에서 '+researchSync.downloaded+'건 확인, '+researchSync.uploaded+'건 업로드).';
 }
 async function syncCloudData() {
   if(!cloudSession?.user?.id) return;
@@ -3042,6 +3083,8 @@ function bindEvents() {
   $('runResearchBtn').addEventListener('click',runResearchLab);
   if ($('researchCompareSelect')) $('researchCompareSelect').addEventListener('change',()=>{researchCompareRunId=$('researchCompareSelect').value;renderResearchHistory();});
   if ($('exportResearchHistoryBtn')) $('exportResearchHistoryBtn').addEventListener('click',exportResearchHistory);
+  if ($('importResearchHistoryBtn')) $('importResearchHistoryBtn').addEventListener('click',()=>$('researchHistoryImportFile').click());
+  if ($('researchHistoryImportFile')) $('researchHistoryImportFile').addEventListener('change',event=>{const file=event.target.files?.[0];importResearchHistoryFile(file);event.target.value='';});
   $('runPortfolioSimulationBtn').addEventListener('click',runPortfolioSimulation);
   $('runSimulationStudioBtn').addEventListener('click',runSimulationStudio);
   $('saveSimulationResultBtn').addEventListener('click',saveCurrentSimulationResult);
