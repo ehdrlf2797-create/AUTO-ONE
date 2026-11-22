@@ -282,3 +282,27 @@ test('invalid backup leaves both memory and local storage untouched', async () =
   assert.equal(context.researchReport.runId, oldReport.runId);
   assert.deepEqual(Object.fromEntries(data), initial);
 });
+
+
+test('uploads local research report edits when local copy wins a same-ID conflict', () => {
+  const local = validReport('edited-run', '2026-11-20T00:00:00.000Z');
+  local.evaluation.strategies[0].label = '로컬 수정본';
+  const remote = validReport('edited-run', '2026-11-20T00:00:00.000Z');
+  remote.evaluation.strategies[0].label = '서버 이전본';
+  const upload = archive.selectRunsToUpload([local], [remote]);
+  assert.equal(upload.length, 1);
+  assert.equal(upload[0].evaluation.strategies[0].label, '로컬 수정본');
+});
+
+test('does not upload a stale local research report over a newer cloud copy', () => {
+  const local = validReport('same-run', '2026-11-19T00:00:00.000Z');
+  const remote = validReport('same-run', '2026-11-20T00:00:00.000Z');
+  const upload = archive.selectRunsToUpload([local], [remote]);
+  assert.equal(upload.length, 0);
+});
+
+test('uploads missing research reports and skips identical cloud copies', () => {
+  const local = validReport('local-only', '2026-11-20T00:00:00.000Z');
+  const identical = validReport('same-run', '2026-11-19T00:00:00.000Z');
+  assert.deepEqual(archive.selectRunsToUpload([local, identical], [identical]).map(row => row.runId), ['local-only']);
+});
