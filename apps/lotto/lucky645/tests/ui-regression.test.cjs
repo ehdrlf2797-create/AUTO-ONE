@@ -60,7 +60,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-account-sync-guard-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-account-data-scope-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -180,7 +180,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /id="exportResearchHistoryBtn"/);
   assert.match(html, /id="importResearchHistoryBtn"/);
   assert.match(html, /id="researchHistoryImportFile"/);
-  assert.match(html, /\/assets\/research-history\.js\?v=20261122-account-sync-guard-1/);
+  assert.match(html, /\/assets\/research-history\.js\?v=20261122-account-data-scope-1/);
   assert.match(app, /function importResearchHistoryFile\(file\)/);
   assert.match(app, /function renderResearchHistory\(\)/);
   assert.match(app, /function exportResearchHistory\(\)/);
@@ -217,7 +217,7 @@ test('research lab includes randomized tournament and run-history comparison sur
 
 test('cloud sync panel exposes status, counts, retry and backup management', () => {
   assert.match(html, /id="cloudSyncDetails"/);
-  assert.match(html, /app\.css\?v=20261122-account-sync-guard-1/);
+  assert.match(html, /app\.css\?v=20261122-account-data-scope-1/);
   assert.match(html, /id="cloudSyncNowBtn"/);
   assert.match(app, /lastSuccessAt/);
   assert.match(app, /uploaded/);
@@ -269,4 +269,21 @@ test('switching or signing out during cloud sync invalidates the old sync genera
   assert.match(app, /if\(previousUserId!==nextUserId\)\{\s*cloudSessionGeneration\+\+/);
   assert.match(app, /if\(cloudSyncPromise\)cloudSyncRequested=Boolean\(nextUserId\)/);
   assert.match(app, /if\(cloudSessionGeneration===syncGeneration&&cloudSession\?\.user\?\.id===syncUserId\)/);
+});
+
+
+test('account-owned browser records use isolated namespaces and migrate legacy data only to the first account', () => {
+  assert.match(app, /const ACCOUNT_SCOPED_KEYS = new Set\(/);
+  assert.match(app, /function accountScopedStorageKey\(key,userId=cloudSession\?\.user\?\.id\|\|'local'\)/);
+  assert.match(app, /key\+'::'\+String\(userId\|\|'local'\)/);
+  assert.match(app, /if\(seen\.length===0\)/);
+  assert.match(app, /localStorage\.removeItem\(key\)/);
+  assert.match(app, /function appStorageGet\(key\)/);
+  assert.match(app, /function appStorageSet\(key,value\)/);
+  assert.match(app, /function reloadAccountScopedState\(\)/);
+  assert.match(app, /if\(previousUserId!==nextUserId\)reloadAccountScopedState\(\)/);
+  assert.match(app, /activateAccountStorageScope\(nextUserId\)/);
+  for (const key of ['SAVED_KEY','SAVED_CHECKS_KEY','AUTO_CHECK_KEY','SIMULATION_HISTORY_KEY','RESEARCH_REPORT_KEY','RESEARCH_HISTORY_KEY','RESEARCH_CANDIDATES_KEY','CLOUD_SYNC_META_KEY']) {
+    assert.match(app, new RegExp(key));
+  }
 });
