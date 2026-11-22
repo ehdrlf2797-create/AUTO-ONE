@@ -85,6 +85,7 @@ test('overlapping sync requests share one run and schedule a trailing sync', asy
   const gate = new Promise(resolve => { resolveRun = resolve; });
   const context = {
     cloudSession: { user: { id: 'user-a' } },
+    cloudSessionGeneration: 0,
     cloudSyncPromise: null,
     cloudSyncRequested: false,
     performCloudSync() {
@@ -115,6 +116,7 @@ test('sync failure still releases the lock and schedules a requested retry', asy
   let scheduled = 0;
   const context = {
     cloudSession: { user: { id: 'user-a' } },
+    cloudSessionGeneration: 0,
     cloudSyncPromise: null,
     cloudSyncRequested: false,
     performCloudSync() {
@@ -317,9 +319,13 @@ test('cloud upsert sends large history collections in bounded batches', async ()
   const requests=[];
   const context={
     cloudSession:{user:{id:'user-a'}},
+    cloudSessionGeneration:0,
     async cloudRequest(url,options,token){requests.push({url,options,token});}
   };
-  vm.runInNewContext(appSource.slice(start,end)+'\nthis.cloudUpsert=cloudUpsert;',context);
+  const guardStart=appSource.indexOf('function assertCloudSyncSession(');
+  const guardEnd=appSource.indexOf('\nasync function performCloudSync()',guardStart);
+  assert.notEqual(guardStart,-1);
+  vm.runInNewContext(appSource.slice(start,guardStart)+appSource.slice(guardStart,guardEnd)+'\nthis.cloudUpsert=cloudUpsert;',context);
   const rows=Array.from({length:501},(_,index)=>({
     category:'check_history',record_key:String(index),payload:{round:index+1},deleted_at:null
   }));
@@ -410,7 +416,7 @@ test('cloud upsert retries only explicit merge-duplicate PostgREST writes', asyn
 
 test('research history cloud sync paginates beyond the 1000-row REST cap', async () => {
   const start = appSource.indexOf('async function fetchAllResearchRuns(token) {');
-  const end = appSource.indexOf('\nasync function syncResearchRuns(token)', start);
+  const end = appSource.indexOf('\nasync function syncResearchRuns(', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const requests = [];
@@ -435,7 +441,7 @@ test('research history cloud sync paginates beyond the 1000-row REST cap', async
 
 test('research history pagination rejects invalid pages and caps excessive archives', async () => {
   const start = appSource.indexOf('async function fetchAllResearchRuns(token) {');
-  const end = appSource.indexOf('\nasync function syncResearchRuns(token)', start);
+  const end = appSource.indexOf('\nasync function syncResearchRuns(', start);
   const context = {
     async cloudRequest() { return { error: 'invalid' }; }
   };
