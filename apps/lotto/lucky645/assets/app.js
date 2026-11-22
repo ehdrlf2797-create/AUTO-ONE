@@ -2758,17 +2758,48 @@ function cloudHeaders(token) {
   if(token) headers.Authorization='Bearer '+token;
   return headers;
 }
-async function cloudRequest(path, options={}, token=null) {
-  const response=await fetch(SUPABASE_URL+path,{...options,headers:{...cloudHeaders(token),...(options.headers||{})}});
-  const body=await response.text();
-  let data=null; try{data=body?JSON.parse(body):null;}catch(_){data={message:body};}
-  if(!response.ok) {
-    const error=new Error(data?.msg||data?.message||data?.error_description||data?.error||('HTTP '+response.status));
-    error.status=response.status;
-    error.code=data?.code||data?.error_code||null;
-    throw error;
+function shouldRetryCloudRequest(path, options, response, failure) {
+  const method=String(options.method||'GET').toUpperCase();
+  const headers=options.headers||{};
+  const prefer=Object.entries(headers).find(([key])=>key.toLowerCase()==='prefer')?.[1]||'';
+  const safeRead=method==='GET'||method==='HEAD';
+  // Only retry writes that are explicitly idempotent PostgREST upserts.
+  const safeUpsert=method==='POST'&&path.startsWith('/rest/v1/')&&
+    /(?:^|[?&])on_conflict=/.test(path)&&/resolution=merge-duplicates/i.test(String(prefer));
+  if(!safeRead&&!safeUpsert)return false;
+  if(failure) {
+    return failure.name!=='AbortError'&&failure.name!=='TimeoutError'&&
+      (failure instanceof TypeError||failure.name==='TypeError');
   }
-  return data;
+  return [408,503,504,520].includes(Number(response?.status));
+}
+async function cloudRequest(path, options={}, token=null) {
+  const request={...options,headers:{...cloudHeaders(token),...(options.headers||{})}};
+  let lastFailure=null;
+  for(let attempt=0;attempt<3;attempt++) {
+    let response;
+    try {
+      response=await fetch(SUPABASE_URL+path,request);
+      if(!response.ok&&shouldRetryCloudRequest(path,options,response,null)&&attempt<2) {
+        await new Promise(resolve=>setTimeout(resolve,300*(2**attempt)));
+        continue;
+      }
+      const body=await response.text();
+      let data=null; try{data=body?JSON.parse(body):null;}catch(_){data={message:body};}
+      if(!response.ok) {
+        const error=new Error(data?.msg||data?.message||data?.error_description||data?.error||('HTTP '+response.status));
+        error.status=response.status;
+        error.code=data?.code||data?.error_code||null;
+        throw error;
+      }
+      return data;
+    } catch(error) {
+      lastFailure=error;
+      if(error?.status||!shouldRetryCloudRequest(path,options,null,error)||attempt>=2) throw error;
+      await new Promise(resolve=>setTimeout(resolve,300*(2**attempt)));
+    }
+  }
+  throw lastFailure||new Error('클라우드 요청에 실패했습니다.');
 }
 async function cloudAuth(path, body, token=null) {
   return cloudRequest('/auth/v1/'+path,{method:'POST',body:JSON.stringify(body)},token);
