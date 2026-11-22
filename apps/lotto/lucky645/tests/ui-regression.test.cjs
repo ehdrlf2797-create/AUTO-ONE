@@ -42,6 +42,21 @@ test('frontend draw normalization preserves official sales and payout without tr
   });
   assert.equal(missingOfficialSales.totalSales, null);
   assert.equal(missingOfficialSales.totalPrizePayout, null);
+
+  const csvDraw = context.normalizeDraw({
+    ...base,
+    wholEpsdSumNtslAmt: undefined,
+    rlvtEpsdSumNtslAmt: undefined,
+    totalSales: 58496443856,
+    totSellamnt: 116992886000,
+    rnk1WnAmt: 100, rnk1WnNope: 2,
+    rnk2WnAmt: 20, rnk2WnNope: 3,
+    rnk3WnAmt: 5, rnk3WnNope: 4,
+    rnk4WnAmt: 4, rnk4WnNope: 5,
+    rnk5WnAmt: 1, rnk5WnNope: 6
+  });
+  assert.equal(csvDraw.totalSales, 116992886000);
+  assert.equal(csvDraw.totalPrizePayout, 270);
 });
 
 test('all nine app sections are reachable from the mobile navigation', () => {
