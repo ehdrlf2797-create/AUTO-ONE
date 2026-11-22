@@ -148,6 +148,7 @@ let isRefreshing = false;
 const $ = id => document.getElementById(id);
 const formatNumber = n => Number(n || 0).toLocaleString('ko-KR');
 const money = n => `${formatNumber(n)}원`;
+const formatDrawMoney = value => value != null && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? money(Number(value)) : '자료 없음';
 const escapeHtml = value => String(value).replace(/[&<>\"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[character]));
 
 function normalizeSyncTimestamp(value) {
@@ -948,21 +949,23 @@ async function refreshData(showToast = true) {
     draws = mergeDraws([], draws);
     const newestAvailable = draws.at(-1) || FALLBACK_DRAW;
     latest = newestAvailable;
+    const mergedOfficialLatest = officialLatest ? draws.find(draw => draw.round === officialLatest.round) : null;
+    const mergedMirrorLatest = mirrorLatest ? draws.find(draw => draw.round === mirrorLatest.round) : null;
 
     if (officialLatest && officialLatest.round < newestAvailable.round) {
       latestVerification = 'mismatch';
       latestSource = '공식 조회와 누적 데이터 회차 불일치';
       errors.push(`공식 API는 ${officialLatest.round}회, 보유 자료는 ${newestAvailable.round}회까지 포함합니다. 최신 여부를 재확인하세요.`);
     } else if (officialLatest && officialLatest.round === newestAvailable.round) {
-      latest = officialLatest;
+      latest = mergedOfficialLatest || officialLatest;
       latestVerification = 'official';
       latestSource = '동행복권 공식 API';
     } else if (officialLatest && officialLatest.round > newestAvailable.round) {
-      latest = officialLatest;
+      latest = mergedOfficialLatest || officialLatest;
       latestVerification = 'official';
       latestSource = '동행복권 공식 API';
     } else if (mirrorLatest && mirrorLatest.round === newestAvailable.round) {
-      latest = mirrorLatest;
+      latest = mergedMirrorLatest || mirrorLatest;
       latestVerification = 'mirror';
       latestSource = '공개 최신 결과 사본';
     } else if (String(newestAvailable.source || '').includes('GitHub') || String(newestAvailable.source || '').includes('CSV')) {
@@ -1050,6 +1053,10 @@ function renderLatest() {
   const sourceLabel = $('latestSourceLabel');
   if (sourceLabel) sourceLabel.textContent = ({official:'출처: 동행복권 사이트 조회',mirror:'출처: 공개 데이터 사본',history:'출처: 누적 회차 데이터',cache:'출처: 저장된 데이터',pending:'출처: 확인 필요',mismatch:'출처: 회차 불일치 확인 필요'})[latestVerification] || '출처: 확인 필요';
   $('latestBonus').innerHTML = unverifiedFallback ? '보너스 번호 확인 전' : `보너스 ${ball(latest.bonus,true)}`;
+  const latestSales = $('latestSales');
+  const latestPayout = $('latestPayout');
+  if (latestSales) latestSales.textContent = unverifiedFallback ? '확인 대기' : formatDrawMoney(latest.totalSales);
+  if (latestPayout) latestPayout.textContent = unverifiedFallback ? '확인 대기' : formatDrawMoney(latest.totalPrizePayout);
   $('checkRound').value = unverifiedFallback ? '' : latest.round;
   $('statDrawCount').textContent = draws.length.toLocaleString();
 }
@@ -2148,10 +2155,10 @@ function renderHistory() {
     $('historyList').innerHTML = '<div class="empty">해당 회차 데이터가 없습니다.</div>';
     return;
   }
-  $('historyList').innerHTML = `<div class="table-wrap"><table><thead><tr><th>회차</th><th>추첨일</th><th>당첨번호</th><th>보너스</th><th>1등 당첨자</th></tr></thead><tbody>${pageRows.map(draw=>{
+  $('historyList').innerHTML = `<div class="table-wrap"><table><thead><tr><th>회차</th><th>추첨일</th><th>당첨번호</th><th>보너스</th><th>1등 당첨자</th><th>판매액</th><th>총 당첨금</th></tr></thead><tbody>${pageRows.map(draw=>{
     const rank1 = draw.ranks?.find(item=>Number(item.rank)===1);
     const winners = rank1?.winners;
-    return `<tr><td><strong>${draw.round}회</strong></td><td>${escapeHtml(draw.date || '-')}</td><td><div class="history-row">${draw.numbers.map(n=>ball(n,true)).join('')}</div></td><td>${ball(draw.bonus,true,true)}</td><td>${winners != null && Number.isFinite(Number(winners)) ? `${formatNumber(winners)}명` : '-'}</td></tr>`;
+    return `<tr><td><strong>${draw.round}회</strong></td><td>${escapeHtml(draw.date || '-')}</td><td><div class="history-row">${draw.numbers.map(n=>ball(n,true)).join('')}</div></td><td>${ball(draw.bonus,true,true)}</td><td>${winners != null && Number.isFinite(Number(winners)) ? `${formatNumber(winners)}명` : '-'}</td><td>${formatDrawMoney(draw.totalSales)}</td><td>${formatDrawMoney(draw.totalPrizePayout)}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
