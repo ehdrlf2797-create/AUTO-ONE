@@ -90,7 +90,10 @@ function normalizeDraw(raw) {
     }).filter(item => item.prize !== null || item.winners !== null);
   }
 
-  const rawSales = asInteger(raw.totalSales ?? raw.wholEpsdSumNtslAmt);
+  // Only the official whole-episode sales field is authoritative for sales.
+  // Third-party mirrors may misuse `totalSales` for prize payouts; never trust it here.
+  const rawSales = asInteger(raw.wholEpsdSumNtslAmt);
+  const rawPrizePayout = asInteger(raw.rlvtEpsdSumNtslAmt ?? raw.totalPrizePayout);
   return {
     round,
     date,
@@ -98,6 +101,7 @@ function normalizeDraw(raw) {
     bonus,
     ranks,
     totalSales: rawSales !== null && rawSales >= 0 ? rawSales : null,
+    totalPrizePayout: rawPrizePayout !== null && rawPrizePayout >= 0 ? rawPrizePayout : null,
     source: typeof raw.source === 'string' ? raw.source : undefined
   };
 }
@@ -218,7 +222,8 @@ function officialCompatibleDraw(draw) {
     numbers: draw.numbers,
     bonus: draw.bonus,
     ranks: draw.ranks,
-    totalSales: draw.totalSales
+    totalSales: draw.totalSales,
+    totalPrizePayout: draw.totalPrizePayout
   };
 }
 
