@@ -60,7 +60,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-sync-conflicts-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-account-sync-guard-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -180,7 +180,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /id="exportResearchHistoryBtn"/);
   assert.match(html, /id="importResearchHistoryBtn"/);
   assert.match(html, /id="researchHistoryImportFile"/);
-  assert.match(html, /\/assets\/research-history\.js\?v=20261122-sync-conflicts-1/);
+  assert.match(html, /\/assets\/research-history\.js\?v=20261122-account-sync-guard-1/);
   assert.match(app, /function importResearchHistoryFile\(file\)/);
   assert.match(app, /function renderResearchHistory\(\)/);
   assert.match(app, /function exportResearchHistory\(\)/);
@@ -217,7 +217,7 @@ test('research lab includes randomized tournament and run-history comparison sur
 
 test('cloud sync panel exposes status, counts, retry and backup management', () => {
   assert.match(html, /id="cloudSyncDetails"/);
-  assert.match(html, /app\.css\?v=20261122-sync-conflicts-1/);
+  assert.match(html, /app\.css\?v=20261122-account-sync-guard-1/);
   assert.match(html, /id="cloudSyncNowBtn"/);
   assert.match(app, /lastSuccessAt/);
   assert.match(app, /uploaded/);
@@ -253,4 +253,20 @@ test('account switching reloads account-scoped backups and preserves other accou
 test('research sync uploads changed local winner for same run ID but not stale copies', () => {
   assert.match(app, /selectRunsToUpload\(researchHistory, remoteReports\)/);
   assert.match(researchHistorySource, /function selectRunsToUpload\(localRuns, remoteRuns\)/);
+});
+
+
+test('cloud sync pins all reads and writes to the initiating account session', () => {
+  assert.match(app, /let cloudSessionGeneration = 0/);
+  assert.match(app, /function assertCloudSyncSession\(expectedUserId,expectedGeneration=cloudSessionGeneration\)/);
+  assert.match(app, /const syncUserId=cloudSession\.user\.id;\s*const syncGeneration=cloudSessionGeneration;/);
+  assert.match(app, /cloudUpsert\(\[\.\.\.activeRows,\.\.\.deletedRows\],token,syncUserId,syncGeneration\)/);
+  assert.match(app, /syncResearchRuns\(token,syncUserId,syncGeneration\)/);
+  assert.match(app, /user_id:expectedUserId/);
+});
+
+test('switching or signing out during cloud sync invalidates the old sync generation', () => {
+  assert.match(app, /if\(previousUserId!==nextUserId\)\{\s*cloudSessionGeneration\+\+/);
+  assert.match(app, /if\(cloudSyncPromise\)cloudSyncRequested=Boolean\(nextUserId\)/);
+  assert.match(app, /if\(cloudSessionGeneration===syncGeneration&&cloudSession\?\.user\?\.id===syncUserId\)/);
 });
