@@ -701,9 +701,10 @@ function normalizeDraw(raw) {
   let totalPrizePayout = Number.isSafeInteger(payoutNumber) && payoutNumber >= 0 ? payoutNumber : null;
   // CSV exports rank-level individual prize and winner counts, so derive the total only
   // when all five ranks are complete. The official aggregate always takes precedence.
-  if (totalPrizePayout === null && ranks.length === 5 &&
-      ranks.every(item => item.prize !== null && item.winners !== null)) {
-    const derivedPayout = ranks.reduce((sum, item) => sum + item.prize * item.winners, 0);
+  const payoutRanks = [1, 2, 3, 4, 5].map(rank => ranks.find(item => item.rank === rank));
+  if (totalPrizePayout === null &&
+      payoutRanks.every(item => item && item.prize !== null && item.winners !== null)) {
+    const derivedPayout = payoutRanks.reduce((sum, item) => sum + item.prize * item.winners, 0);
     totalPrizePayout = Number.isSafeInteger(derivedPayout) ? derivedPayout : null;
   }
 
