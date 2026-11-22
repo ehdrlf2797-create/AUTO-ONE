@@ -512,7 +512,7 @@ test('latest draw card renders sales and total payout independently and never tu
   assert.ok(html.includes('id="latestSales"'));
   assert.ok(html.includes('id="latestPayout"'));
   const start = app.indexOf('function renderLatest()');
-  const end = app.indexOf('\\nfunction loadResearchReport()', start);
+  const end = app.indexOf('\nfunction loadResearchReport()', start);
   assert.ok(start >= 0 && end > start);
   const elements = Object.fromEntries([
     'latestRound','latestBalls','latestVerification','latestDate','latestSourceLabel',
@@ -533,7 +533,7 @@ test('latest draw card renders sales and total payout independently and never tu
     formatDrawMoney:value=>value == null ? '자료 없음' : `${Number(value).toLocaleString('ko-KR')}원`,
     formatNumber:value=>Number(value||0).toLocaleString('ko-KR')
   };
-  vm.runInNewContext(app.slice(start,end)+'\\nthis.renderLatest=renderLatest;',context);
+  vm.runInNewContext(app.slice(start,end)+'\nthis.renderLatest=renderLatest;',context);
   context.renderLatest();
   assert.equal(elements.latestSales.textContent,'116,992,886,000원');
   assert.equal(elements.latestPayout.textContent,'58,496,443,856원');
@@ -545,7 +545,7 @@ test('latest draw card renders sales and total payout independently and never tu
 
 test('draw history table shows distinct sales and payout columns with explicit missing values', () => {
   const start = app.indexOf('function renderHistory()');
-  const end = app.indexOf('\\nasync function getDraw(', start);
+  const end = app.indexOf('\nasync function getDraw(', start);
   assert.ok(start >= 0 && end > start);
   const elements = {
     historyPageLabel:{textContent:''},
@@ -565,7 +565,7 @@ test('draw history table shows distinct sales and payout columns with explicit m
     formatNumber:value=>Number(value||0).toLocaleString('ko-KR'),
     formatDrawMoney:value=>value == null ? '자료 없음' : `${Number(value).toLocaleString('ko-KR')}원`
   };
-  vm.runInNewContext(app.slice(start,end)+'\\nthis.renderHistory=renderHistory;',context);
+  vm.runInNewContext(app.slice(start,end)+'\nthis.renderHistory=renderHistory;',context);
   context.renderHistory();
   assert.ok(elements.historyList.innerHTML.includes('<th>판매액</th>'));
   assert.ok(elements.historyList.innerHTML.includes('<th>총 당첨금</th>'));
