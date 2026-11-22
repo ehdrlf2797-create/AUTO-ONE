@@ -59,6 +59,51 @@ test('frontend draw normalization preserves official sales and payout without tr
   assert.equal(csvDraw.totalPrizePayout, 306);
 });
 
+test('historical ambiguous totalSales aliases cannot overwrite CSV sales or rank payout', () => {
+  const start = app.indexOf('function sortNums(numbers)');
+  const end = app.indexOf('\\nfunction extractDraws(json)', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const context = {};
+  vm.runInNewContext(app.slice(start, end) + '\\nthis.normalizeDraw = normalizeDraw;', context);
+
+  const round289 = context.normalizeDraw({
+    round: 289,
+    date: '2008-06-14',
+    numbers: [3, 14, 33, 37, 38, 42],
+    bonus: 10,
+    totalSales: 19703321500,
+    totSellamnt: 39406643000,
+    ranks: [
+      {rank:1, prize:0, winners:0},
+      {rank:2, prize:63761694, winners:24},
+      {rank:3, prize:1501748, winners:1019},
+      {rank:4, prize:58541, winners:52281},
+      {rank:5, prize:5000, winners:880103}
+    ]
+  });
+  assert.equal(round289.totalSales, 39406643000);
+  assert.equal(round289.totalPrizePayout, 10521658889);
+
+  const round296 = context.normalizeDraw({
+    round: 296,
+    date: '2008-08-02',
+    numbers: [3, 8, 15, 27, 30, 45],
+    bonus: 44,
+    totalSales: 31688949500,
+    totSellamnt: 63377899000,
+    ranks: [
+      {rank:1, prize:3066088275, winners:8},
+      {rank:2, prize:46243415, winners:53},
+      {rank:3, prize:1186303, winners:2066},
+      {rank:4, prize:54498, winners:89945},
+      {rank:5, prize:5000, winners:1435988}
+    ]
+  });
+  assert.equal(round296.totalSales, 63377899000);
+  assert.equal(round296.totalPrizePayout, 41512271803);
+});
+
 test('CSV history parser maps total sales and derives complete rank payout totals', () => {
   const helperStart = app.indexOf('function sortNums(numbers)');
   const normalizerEnd = app.indexOf('\nfunction extractDraws(json)', helperStart);
