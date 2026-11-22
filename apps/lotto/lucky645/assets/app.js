@@ -54,8 +54,10 @@ const ACCOUNT_SCOPED_KEYS = new Set([
   CLOUD_SYNC_META_KEY
 ]);
 const ACCOUNT_SCOPE_SEEN_KEY = 'lucky645_account_scope_seen_v1';
-function accountScopedStorageKey(key, userId=cloudSession?.user?.id||'local') {
-  return ACCOUNT_SCOPED_KEYS.has(key) ? key+'::'+String(userId||'local') : key;
+function accountScopedStorageKey(key, userId) {
+  if(!ACCOUNT_SCOPED_KEYS.has(key))return key;
+  const owner=userId||cloudSession?.user?.id||'local';
+  return key+'::'+String(owner);
 }
 function activateAccountStorageScope(userId) {
   if (!userId) return false;
@@ -86,13 +88,13 @@ function activateAccountStorageScope(userId) {
   return true;
 }
 function appStorageGet(key) {
-  return appStorageGet(accountScopedStorageKey(key));
+  return localStorage.getItem(accountScopedStorageKey(key));
 }
 function appStorageSet(key,value) {
-  return appStorageSet(accountScopedStorageKey(key),value);
+  return localStorage.setItem(accountScopedStorageKey(key),value);
 }
 function appStorageRemove(key) {
-  return appStorageRemove(accountScopedStorageKey(key));
+  return localStorage.removeItem(accountScopedStorageKey(key));
 }
 activateAccountStorageScope(cloudSession?.user?.id);
 let cloudSessionGeneration = 0;
