@@ -173,3 +173,112 @@ test('migrates a legacy v1 report with missing newer metrics', () => {
   assert.ok(Math.abs(normalized.evaluation.strategies[0].delta - 0.01) < 1e-12);
   assert.equal(normalized.evaluation.strategies[0].zScore, 0);
 });
+
+
+test('rejects duplicate run IDs in a backup instead of silently choosing one', () => {
+  assert.throws(() => archive.normalizeArchive({
+    schema: 'lucky645-research-history-v1',
+    runs: [
+      validReport('duplicate-run', '2026-11-18T00:00:00.000Z'),
+      validReport('duplicate-run', '2026-11-19T00:00:00.000Z')
+    ]
+  }), /중복된 연구 실행 ID/);
+});
+
+test('local report wins an imported copy when run ID and timestamp are equal', () => {
+  const local = validReport('same-run', '2026-11-18T00:00:00.000Z');
+  local.evaluation.strategies[0].label = '현재 로컬 기록';
+  const backup = validReport('same-run', '2026-11-18T00:00:00.000Z');
+  backup.evaluation.strategies[0].label = '백업 파일 기록';
+  const merged = archive.mergeRuns([backup], [local]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].evaluation.strategies[0].label, '현재 로컬 기록');
+});
+
+function restoreContext(initial = {}, options = {}) {
+  const data = new Map(Object.entries(initial));
+  let failKey = options.failKey || '';
+  let failCount = options.failCount || 0;
+  const storage = {
+    getItem(key) { return data.has(key) ? data.get(key) : null; },
+    setItem(key, value) {
+      if (key === failKey && failCount > 0) { failCount--; throw new Error('quota exceeded'); }
+      data.set(key, String(value));
+    },
+    removeItem(key) { data.delete(key); }
+  };
+  const oldReport = options.oldReport || makeReport(0);
+  const oldHistory = options.oldHistory || [oldReport];
+  const context = {
+    localStorage: storage,
+    window: { Lucky645ResearchHistory: archive },
+    RESEARCH_REPORT_KEY: 'report',
+    RESEARCH_HISTORY_KEY: 'history',
+    RESEARCH_CANDIDATES_KEY: 'candidates',
+    MAX_RESEARCH_HISTORY: 12,
+    MAX_BACKUP_FILE_SIZE: 12 * 1024 * 1024,
+    researchReport: oldReport,
+    researchHistory: oldHistory,
+    researchCandidates: [{ id: 'keep', label: 'keep' }],
+    cloudSession: null,
+    confirm: () => true,
+    toast() {},
+    renderResearchLab() {},
+    Number, String, Array, JSON, Math, Date, Set, Map, TextEncoder
+  };
+  vm.createContext(context);
+  const persistStart = appSource.indexOf('function persistResearchState()');
+  const persistEnd = appSource.indexOf('\nfunction renderResearchResults()', persistStart);
+  const importStart = appSource.indexOf('async function importResearchHistoryFile(file)');
+  const importEnd = appSource.indexOf('\nasync function fetchAllResearchRuns(token)', importStart);
+  assert.ok(persistStart >= 0 && persistEnd > persistStart);
+  assert.ok(importStart >= 0 && importEnd > importStart);
+  vm.runInContext(appSource.slice(persistStart, persistEnd) + '\n' + appSource.slice(importStart, importEnd), context);
+  return { context, data };
+}
+
+test('restore merges a valid archive and retains the existing local copy on timestamp ties', async () => {
+  const current = validReport('shared-run', '2026-11-18T00:00:00.000Z');
+  current.evaluation.strategies[0].label = '현재 로컬 기록';
+  const backup = validReport('shared-run', '2026-11-18T00:00:00.000Z');
+  backup.evaluation.strategies[0].label = '백업 파일 기록';
+  const { context } = restoreContext({}, { oldReport: current, oldHistory: [current] });
+  await context.importResearchHistoryFile({ size: 10, text: async () => JSON.stringify({
+    schema: 'lucky645-research-history-v1', runs: [backup]
+  }) });
+  assert.equal(context.researchHistory.length, 1);
+  assert.equal(context.researchHistory[0].evaluation.strategies[0].label, '현재 로컬 기록');
+});
+
+test('restore storage failure rolls back local state and all previously written keys', async () => {
+  const oldReport = makeReport(0);
+  const oldHistory = [oldReport];
+  const initial = {
+    report: JSON.stringify(oldReport),
+    history: JSON.stringify(oldHistory),
+    candidates: JSON.stringify([{ id: 'keep', label: 'keep' }])
+  };
+  const { context, data } = restoreContext(initial, { oldReport, oldHistory, failKey: 'candidates', failCount: 1 });
+  const incoming = makeReport(5);
+  await context.importResearchHistoryFile({ size: 10, text: async () => JSON.stringify({
+    schema: 'lucky645-research-history-v1', runs: [incoming]
+  }) });
+  assert.equal(context.researchReport.runId, oldReport.runId);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.researchHistory.map(item => item.runId))), [oldReport.runId]);
+  assert.deepEqual(Object.fromEntries(data), initial);
+});
+
+test('invalid backup leaves both memory and local storage untouched', async () => {
+  const oldReport = makeReport(0);
+  const initial = {
+    report: JSON.stringify(oldReport),
+    history: JSON.stringify([oldReport]),
+    candidates: JSON.stringify([{ id: 'keep', label: 'keep' }])
+  };
+  const { context, data } = restoreContext(initial, { oldReport, oldHistory: [oldReport] });
+  await context.importResearchHistoryFile({ size: 10, text: async () => JSON.stringify({
+    schema: 'lucky645-research-history-v1', runs: [validReport('ok', '2026-11-18T00:00:00.000Z'), { version: 99 }]
+  }) });
+  assert.equal(context.researchReport.runId, oldReport.runId);
+  assert.deepEqual(Object.fromEntries(data), initial);
+});

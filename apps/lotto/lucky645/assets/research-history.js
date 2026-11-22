@@ -46,14 +46,21 @@
   function normalizeArchive(raw) {
     if (!raw || raw.schema !== ARCHIVE_SCHEMA || !Array.isArray(raw.runs) || raw.runs.length < 1 || raw.runs.length > 100)
       throw new Error('LUCKY 645 연구 이력 JSON 파일이 아니거나 실행 목록이 올바르지 않습니다.');
-    return raw.runs.map(normalizeReport);
+    const rows = raw.runs.map(normalizeReport);
+    const ids = new Set();
+    for (const row of rows) {
+      if (ids.has(row.runId)) throw new Error('백업 파일에 중복된 연구 실행 ID가 있습니다: ' + row.runId);
+      ids.add(row.runId);
+    }
+    return rows;
   }
   function mergeRuns(...groups) {
     const byId = new Map();
     for (const group of groups) for (const raw of Array.isArray(group) ? group : []) {
       let item; try { item = normalizeReport(raw); } catch (_) { continue; }
       const key = item.runId || item.createdAt, existing = byId.get(key);
-      if (!existing || Date.parse(item.createdAt) > Date.parse(existing.createdAt)) byId.set(key, item);
+      // Later groups win timestamp ties, so the current local copy takes precedence over an imported/cloud copy.
+      if (!existing || Date.parse(item.createdAt) >= Date.parse(existing.createdAt)) byId.set(key, item);
     }
     return Array.from(byId.values()).sort((a,b) => Date.parse(b.createdAt)-Date.parse(a.createdAt)).slice(0, MAX_RUNS);
   }
