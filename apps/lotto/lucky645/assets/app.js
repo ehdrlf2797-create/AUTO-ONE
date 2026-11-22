@@ -1275,9 +1275,23 @@ async function importResearchHistoryFile(file) {
   } catch (error) { toast('연구 이력 복원 실패: '+error.message); }
 }
 
+async function fetchAllResearchRuns(token) {
+  const pageSize = 1000;
+  const maxRows = 200000;
+  const base = '/rest/v1/lucky645_research_runs?select=run_id,report,created_at,updated_at&order=created_at.desc,run_id.asc';
+  const rows = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const page = await cloudRequest(base + `&limit=${pageSize}&offset=${offset}`, { method: 'GET' }, token);
+    if (!Array.isArray(page)) throw new Error('클라우드 연구 이력 응답 형식이 올바르지 않습니다.');
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+  throw new Error('연구 이력이 20만 건을 초과했습니다. JSON 백업으로 보관한 뒤 고객지원에 문의해 주세요.');
+}
+
 async function syncResearchRuns(token) {
   if (!cloudSession?.user?.id || !token) return { uploaded: 0, downloaded: 0 };
-  const remote = await cloudRequest('/rest/v1/lucky645_research_runs?select=run_id,report,created_at,updated_at&order=created_at.desc&limit=1000', { method: 'GET' }, token);
+  const remote = await fetchAllResearchRuns(token);
   if (!Array.isArray(remote)) throw new Error('클라우드 연구 이력 응답 형식이 올바르지 않습니다.');
   const remoteReports = remote.map(row => {
     const report = window.Lucky645ResearchHistory.normalizeReport(row.report);
