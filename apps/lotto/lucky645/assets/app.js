@@ -1320,22 +1320,32 @@ function renderResearchHistory() {
 
 async function importResearchHistoryFile(file) {
   if (!file) return;
+  const importOwner=cloudSession?.user?.id||'local';
+  const importGeneration=cloudSessionGeneration;
   if (file.size > MAX_BACKUP_FILE_SIZE) return toast('연구 이력 파일은 12MB 이하만 불러올 수 있습니다.');
   try {
-    const raw = JSON.parse(await file.text());
+    const fileText=await file.text();
+    assertAccountScope(importOwner,importGeneration);
+    const raw = JSON.parse(fileText);
     const imported = window.Lucky645ResearchHistory.normalizeArchive(raw);
     const merged = window.Lucky645ResearchHistory.mergeRuns(imported, researchHistory);
     const oldIds = new Set(researchHistory.map(item => item.runId || item.createdAt));
     const added = merged.filter(item => !oldIds.has(item.runId || item.createdAt)).length;
     if (!confirm('검증된 연구 '+imported.length+'건을 확인했습니다. 기존 이력과 병합하고 최근 12건을 보관할까요?\n새로 추가될 연구: '+added+'건\n기존 기록은 덮어쓰지 않습니다.')) return;
+    assertAccountScope(importOwner,importGeneration);
     const previous = { history: researchHistory, report: researchReport };
     researchHistory = merged;
     researchReport = merged[0] || researchReport;
     if (!persistResearchState()) { researchHistory = previous.history; researchReport = previous.report; return; }
     renderResearchLab();
-    if (cloudSession?.access_token) {
-      try { await syncResearchRuns(await cloudAccessToken()); }
-      catch (error) { if ($('cloudMessage')) $('cloudMessage').textContent = '로컬 복원은 완료했지만 클라우드 동기화는 보류됐습니다: '+error.message; }
+    if (importOwner!=='local'&&cloudSession?.access_token) {
+      try {
+        const token=await cloudAccessToken();
+        assertAccountScope(importOwner,importGeneration);
+        await syncResearchRuns(token,importOwner,importGeneration);
+      } catch (error) {
+        if(importOwner===(cloudSession?.user?.id||'local')&&$('cloudMessage')) $('cloudMessage').textContent = '로컬 복원은 완료했지만 클라우드 동기화는 보류됐습니다: '+error.message;
+      }
     }
     toast('연구 이력 복원 완료: '+imported.length+'건 검사, '+added+'건 추가');
   } catch (error) { toast('연구 이력 복원 실패: '+error.message); }
@@ -2178,9 +2188,13 @@ function exportSavedBackup() {
 
 async function importSavedBackup(file) {
   if (!file) return;
+  const importOwner=cloudSession?.user?.id||'local';
+  const importGeneration=cloudSessionGeneration;
   if (file.size > MAX_BACKUP_FILE_SIZE) return toast(`백업 파일은 ${(MAX_BACKUP_FILE_SIZE / 1024 / 1024).toFixed(0)}MB 이하만 불러올 수 있습니다.`);
   try {
-    const raw = JSON.parse(await file.text());
+    const fileText=await file.text();
+    assertAccountScope(importOwner,importGeneration);
+    const raw = JSON.parse(fileText);
     const rows = Array.isArray(raw) ? raw : raw?.saved;
     if (!Array.isArray(rows)) throw new Error('저장 번호 목록이 없습니다.');
     const normalized = rows.map(normalizeSavedEntry).filter(Boolean);
@@ -3172,6 +3186,12 @@ async function cloudUpsert(rows, token, expectedUserId=cloudSession?.user?.id, e
     assertCloudSyncSession(expectedUserId,expectedGeneration);
   }
 }
+function assertAccountScope(expectedUserId,expectedGeneration) {
+  const currentUserId=cloudSession?.user?.id||'local';
+  if(currentUserId!==expectedUserId||cloudSessionGeneration!==expectedGeneration)
+    throw new Error('계정이 변경되어 가져오기를 중단했습니다. 현재 계정에서 다시 시도해 주세요.');
+}
+
 function assertCloudSyncSession(expectedUserId,expectedGeneration=cloudSessionGeneration) {
   if(!expectedUserId||cloudSessionGeneration!==expectedGeneration||cloudSession?.user?.id!==expectedUserId)
     throw new Error('로그인 계정이 변경되어 동기화를 중단했습니다. 현재 계정으로 다시 동기화해 주세요.');

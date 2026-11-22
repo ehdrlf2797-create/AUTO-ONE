@@ -60,7 +60,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-account-data-scope-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-import-session-guard-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -180,7 +180,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /id="exportResearchHistoryBtn"/);
   assert.match(html, /id="importResearchHistoryBtn"/);
   assert.match(html, /id="researchHistoryImportFile"/);
-  assert.match(html, /\/assets\/research-history\.js\?v=20261122-account-data-scope-1/);
+  assert.match(html, /\/assets\/research-history\.js\?v=20261122-import-session-guard-1/);
   assert.match(app, /function importResearchHistoryFile\(file\)/);
   assert.match(app, /function renderResearchHistory\(\)/);
   assert.match(app, /function exportResearchHistory\(\)/);
@@ -217,7 +217,7 @@ test('research lab includes randomized tournament and run-history comparison sur
 
 test('cloud sync panel exposes status, counts, retry and backup management', () => {
   assert.match(html, /id="cloudSyncDetails"/);
-  assert.match(html, /app\.css\?v=20261122-account-data-scope-1/);
+  assert.match(html, /app\.css\?v=20261122-import-session-guard-1/);
   assert.match(html, /id="cloudSyncNowBtn"/);
   assert.match(app, /lastSuccessAt/);
   assert.match(app, /uploaded/);
@@ -325,4 +325,12 @@ test('account storage scopes isolate users and migrate legacy records only once'
   assert.equal(context.appStorageGet(context.SAVED_KEY),'account-A-ticket');
   context.cloudSession={user:{id:'account-B'}};
   assert.equal(context.appStorageGet(context.SAVED_KEY),'account-B-ticket');
+});
+
+
+test('asynchronous backup imports stay pinned to the account that started the import', () => {
+  assert.match(app, /function assertAccountScope\(expectedUserId,expectedGeneration\)/);
+  assert.match(app, /async function importSavedBackup\(file\)[\s\S]*?const importOwner=cloudSession\?\.user\?\.id\|\|'local';[\s\S]*?const importGeneration=cloudSessionGeneration;[\s\S]*?const fileText=await file\.text\(\);[\s\S]*?assertAccountScope\(importOwner,importGeneration\)/);
+  assert.match(app, /async function importResearchHistoryFile\(file\)[\s\S]*?const importOwner=cloudSession\?\.user\?\.id\|\|'local';[\s\S]*?const importGeneration=cloudSessionGeneration;[\s\S]*?const fileText=await file\.text\(\);[\s\S]*?assertAccountScope\(importOwner,importGeneration\)/);
+  assert.match(app, /syncResearchRuns\(token,importOwner,importGeneration\)/);
 });
