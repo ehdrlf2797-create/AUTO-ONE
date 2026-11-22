@@ -389,7 +389,7 @@ test('research lab includes randomized tournament and run-history comparison sur
 
 test('cloud sync panel exposes status, counts, retry and backup management', () => {
   assert.match(html, /id="cloudSyncDetails"/);
-  assert.match(html, /app\.css\?v=20261122-import-session-guard-1/);
+  assert.ok(html.includes('app.css?v=20261123-sales-payout-ui-1'));
   assert.match(html, /id="cloudSyncNowBtn"/);
   assert.match(app, /lastSuccessAt/);
   assert.match(app, /uploaded/);
