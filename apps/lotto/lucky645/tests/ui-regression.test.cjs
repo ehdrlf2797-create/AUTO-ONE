@@ -184,7 +184,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(app, /function importResearchHistoryFile\(file\)/);
   assert.match(app, /function renderResearchHistory\(\)/);
   assert.match(app, /function exportResearchHistory\(\)/);
-  assert.match(app, /function syncResearchRuns\(token\)/);
+  assert.match(app, /function syncResearchRuns\(token,/);
   assert.match(app, /lucky645_research_runs/);
 });
 
