@@ -59,6 +59,71 @@ test('frontend draw normalization preserves official sales and payout without tr
   assert.equal(csvDraw.totalPrizePayout, 306);
 });
 
+test('CSV history parser maps total sales and derives complete rank payout totals', () => {
+  const helperStart = app.indexOf('function sortNums(numbers)');
+  const normalizerEnd = app.indexOf('\nfunction extractDraws(json)', helperStart);
+  const csvStart = app.indexOf('function parseCsvLine(line)');
+  const csvEnd = app.indexOf('\n\nasync function refreshData', csvStart);
+  assert.notEqual(helperStart, -1);
+  assert.notEqual(normalizerEnd, -1);
+  assert.notEqual(csvStart, -1);
+  assert.notEqual(csvEnd, -1);
+
+  const context = {};
+  vm.runInNewContext(
+    app.slice(helperStart, normalizerEnd) + '\n' +
+    app.slice(csvStart, csvEnd) +
+    '\nthis.parseCsv = parseCsv;',
+    context
+  );
+  const csv = [
+    'drwNo,drwNoDate,n1,n2,n3,n4,n5,n6,bonus,firstWinamnt,firstPrzwnerCo,secondWinamnt,secondPrzwnerCo,thirdWinamnt,thirdPrzwnerCo,fourthWinamnt,fourthPrzwnerCo,fifthWinamnt,fifthPrzwnerCo,totSellamnt',
+    '1251,2026-11-21,14,18,19,29,40,45,1,2068843286,14,50284386,96,1693196,2851,50000,146963,5000,2505977,116992886000'
+  ].join('\n');
+  const [draw] = context.parseCsv(csv);
+  assert.equal(draw.totalSales, 116992886000);
+  assert.equal(draw.totalPrizePayout, 58496443856);
+});
+
+test('mergeDraws keeps trusted winning numbers and fills missing financial metrics from CSV', () => {
+  const helperStart = app.indexOf('function sortNums(numbers)');
+  const normalizerEnd = app.indexOf('\nfunction extractDraws(json)', helperStart);
+  const mergeStart = app.indexOf('function sourceTrust(source)');
+  const mergeEnd = app.indexOf('\nfunction hasRealDrawData', mergeStart);
+  assert.notEqual(helperStart, -1);
+  assert.notEqual(normalizerEnd, -1);
+  assert.notEqual(mergeStart, -1);
+  assert.notEqual(mergeEnd, -1);
+
+  const context = {};
+  vm.runInNewContext(
+    app.slice(helperStart, normalizerEnd) + '\n' +
+    app.slice(mergeStart, mergeEnd) +
+    '\nthis.mergeDraws = mergeDraws;',
+    context
+  );
+  const officialNumbers = [14, 18, 19, 29, 40, 45];
+  const preferred = {
+    round: 1251, date: '2026-11-21', numbers: officialNumbers, bonus: 1,
+    ranks: [], source: 'GitHub 원본 JSON'
+  };
+  const csvBackup = {
+    round: 1251, date: '2026-11-21', numbers: [1, 2, 3, 4, 5, 6], bonus: 7,
+    source: 'CSV 보조 사본', totSellamnt: 116992886000,
+    rnk1WnAmt: 2068843286, rnk1WnNope: 14,
+    rnk2WnAmt: 50284386, rnk2WnNope: 96,
+    rnk3WnAmt: 1693196, rnk3WnNope: 2851,
+    rnk4WnAmt: 50000, rnk4WnNope: 146963,
+    rnk5WnAmt: 5000, rnk5WnNope: 2505977
+  };
+  const [merged] = context.mergeDraws([preferred], [csvBackup]);
+  assert.deepEqual(Array.from(merged.numbers), officialNumbers);
+  assert.equal(merged.source, 'GitHub 원본 JSON');
+  assert.equal(merged.totalSales, 116992886000);
+  assert.equal(merged.totalPrizePayout, 58496443856);
+  assert.equal(merged.ranks.length, 5);
+});
+
 test('all nine app sections are reachable from the mobile navigation', () => {
   const navStart = html.indexOf('<nav class="mobile-nav"');
   assert.notEqual(navStart, -1, 'mobile navigation must exist');
