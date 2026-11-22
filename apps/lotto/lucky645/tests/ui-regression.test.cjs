@@ -287,3 +287,39 @@ test('account-owned browser records use isolated namespaces and migrate legacy d
     assert.match(app, new RegExp(key));
   }
 });
+
+
+test('account storage scopes isolate users and migrate legacy records only once', () => {
+  const start=app.indexOf('const ACCOUNT_SCOPED_KEYS = new Set([');
+  const end=app.indexOf('activateAccountStorageScope(cloudSession?.user?.id);',start);
+  assert.ok(start>=0 && end>start);
+  const storage=new Map([['lucky645_saved','legacy-ticket-data']]);
+  const localStorage={
+    getItem:key=>storage.has(key)?storage.get(key):null,
+    setItem:(key,value)=>storage.set(key,String(value)),
+    removeItem:key=>storage.delete(key)
+  };
+  const context={
+    localStorage,cloudSession:null,
+    SAVED_KEY:'lucky645_saved',SAVED_CHECKS_KEY:'lucky645_saved_check_history_v1',
+    AUTO_CHECK_KEY:'lucky645_auto_check_meta_v1',SIMULATION_HISTORY_KEY:'lucky645_simulation_history_v1',
+    RESEARCH_REPORT_KEY:'lucky645_research_report_v1',RESEARCH_HISTORY_KEY:'lucky645_research_history_v1',
+    RESEARCH_CANDIDATES_KEY:'lucky645_research_candidates_v1',CLOUD_SYNC_META_KEY:'lucky645_cloud_sync_meta_v1'
+  };
+  vm.runInNewContext(app.slice(start,end),context);
+  context.activateAccountStorageScope('account-A');
+  assert.equal(storage.get('lucky645_saved::account-A'),'legacy-ticket-data');
+  assert.equal(storage.has('lucky645_saved'),false);
+  context.cloudSession={user:{id:'account-A'}};
+  context.appStorageSet(context.SAVED_KEY,'account-A-ticket');
+  context.activateAccountStorageScope('account-B');
+  context.cloudSession={user:{id:'account-B'}};
+  assert.equal(context.appStorageGet(context.SAVED_KEY),null);
+  context.appStorageSet(context.SAVED_KEY,'account-B-ticket');
+  context.cloudSession=null;
+  assert.equal(context.appStorageGet(context.SAVED_KEY),null);
+  context.cloudSession={user:{id:'account-A'}};
+  assert.equal(context.appStorageGet(context.SAVED_KEY),'account-A-ticket');
+  context.cloudSession={user:{id:'account-B'}};
+  assert.equal(context.appStorageGet(context.SAVED_KEY),'account-B-ticket');
+});
