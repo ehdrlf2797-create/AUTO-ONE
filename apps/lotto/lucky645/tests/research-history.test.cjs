@@ -214,6 +214,9 @@ function restoreContext(initial = {}, options = {}) {
   const oldHistory = options.oldHistory || [oldReport];
   const context = {
     localStorage: storage,
+    appStorageGet: key => storage.getItem(key),
+    appStorageSet: (key,value) => storage.setItem(key,value),
+    appStorageRemove: key => storage.removeItem(key),
     window: { Lucky645ResearchHistory: archive },
     RESEARCH_REPORT_KEY: 'report',
     RESEARCH_HISTORY_KEY: 'history',
