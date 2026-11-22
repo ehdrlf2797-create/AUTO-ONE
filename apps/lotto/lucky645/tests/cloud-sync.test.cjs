@@ -353,3 +353,39 @@ test('cloud sync buckets remote rows in one pass without materializing a duplica
   assert.doesNotMatch(appSource,/remoteActive\.filter\(/);
 });
 
+
+
+test('research history cloud sync paginates beyond the 1000-row REST cap', async () => {
+  const start = appSource.indexOf('async function fetchAllResearchRuns(token) {');
+  const end = appSource.indexOf('\nasync function syncResearchRuns(token)', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const requests = [];
+  const context = {
+    async cloudRequest(url, options, token) {
+      requests.push({ url, options, token });
+      const offset = Number(new URL(url, 'https://local.invalid').searchParams.get('offset'));
+      if (offset === 0) return Array.from({ length: 1000 }, (_, i) => ({ run_id: 'run-' + i }));
+      if (offset === 1000) return Array.from({ length: 17 }, (_, i) => ({ run_id: 'run-' + (1000 + i) }));
+      return [];
+    }
+  };
+  vm.runInNewContext(appSource.slice(start, end) + '\nthis.fetchAllResearchRuns=fetchAllResearchRuns;', context);
+  const rows = await context.fetchAllResearchRuns('research-token');
+  assert.equal(rows.length, 1017);
+  assert.deepEqual(
+    requests.map(item => Number(new URL(item.url, 'https://local.invalid').searchParams.get('offset'))),
+    [0, 1000]
+  );
+  assert.ok(requests.every(item => item.token === 'research-token'));
+});
+
+test('research history pagination rejects invalid pages and caps excessive archives', async () => {
+  const start = appSource.indexOf('async function fetchAllResearchRuns(token) {');
+  const end = appSource.indexOf('\nasync function syncResearchRuns(token)', start);
+  const context = {
+    async cloudRequest() { return { error: 'invalid' }; }
+  };
+  vm.runInNewContext(appSource.slice(start, end) + '\nthis.fetchAllResearchRuns=fetchAllResearchRuns;', context);
+  await assert.rejects(context.fetchAllResearchRuns('token'), /응답 형식/);
+});
