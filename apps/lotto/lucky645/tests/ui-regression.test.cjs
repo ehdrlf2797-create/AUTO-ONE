@@ -231,5 +231,5 @@ test('cloud sync panel exposes status, counts, retry and backup management', () 
 test('research backup restore merges with current records and rolls back on persistence failure', () => {
   assert.match(app, /Lucky645ResearchHistory\.mergeRuns\(backup\.runs,researchHistory\)/);
   assert.match(app, /if\(!persistResearchState\(\)\)\{researchHistory=previous\.history/);
-  assert.match(app, /기존 연구 이력과 병합할까요/);
+  assert.match(app, /현재 연구 이력과 병합할까요/);
 });
