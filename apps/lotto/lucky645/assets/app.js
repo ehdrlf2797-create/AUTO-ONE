@@ -43,11 +43,16 @@ const SUPABASE_URL = 'https://absljxjxrrhmswhpthol.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_OPEj3uNdx3wX7r9C6KDuuA_IuyeTD9p';
 const CLOUD_TOMBSTONES_KEY = 'lucky645_cloud_tombstones_v1';
 const CLOUD_SESSION_KEY = 'lucky645_cloud_session_v1';
+const CLOUD_SYNC_META_KEY = 'lucky645_cloud_sync_meta_v1';
+const RESEARCH_BACKUPS_KEY = 'lucky645_research_backups_v1';
+const MAX_RESEARCH_BACKUPS = 5;
 let cloudSession = loadCloudSession();
 let cloudApplying = false;
 let cloudSyncTimer = null;
 let cloudSyncPromise = null;
 let cloudSyncRequested = false;
+let cloudSyncMeta = loadCloudSyncMeta();
+let researchBackups = loadResearchBackups();
 
 let draws = loadCachedDraws();
 let latest = draws.at(-1) || FALLBACK_DRAW;
@@ -2719,6 +2724,80 @@ async function checkManualNumbers() {
 }
 
 
+function loadCloudSyncMeta() {
+  try {
+    const value=JSON.parse(localStorage.getItem(CLOUD_SYNC_META_KEY)||'{}');
+    return {userId:String(value.userId||''),lastSuccessAt:normalizeSyncTimestamp(value.lastSuccessAt),
+      uploaded:Number.isSafeInteger(value.uploaded)&&value.uploaded>=0?value.uploaded:0,
+      downloaded:Number.isSafeInteger(value.downloaded)&&value.downloaded>=0?value.downloaded:0,
+      status:['success','error','running'].includes(value.status)?value.status:'idle',
+      error:typeof value.error==='string'?value.error.slice(0,500):''};
+  } catch (_) { return {userId:'',lastSuccessAt:'',uploaded:0,downloaded:0,status:'idle',error:''}; }
+}
+function persistCloudSyncMeta() {
+  try { localStorage.setItem(CLOUD_SYNC_META_KEY,JSON.stringify(cloudSyncMeta)); } catch (_) {}
+  renderCloudSyncStatus();
+}
+function renderCloudSyncStatus() {
+  const target=$('cloudSyncDetails');
+  if(!target)return;
+  const sameUser=Boolean(cloudSession?.user?.id&&cloudSyncMeta.userId===cloudSession.user.id);
+  const meta=sameUser?cloudSyncMeta:{status:'idle',lastSuccessAt:'',uploaded:0,downloaded:0,error:''};
+  const state=meta.status==='success'?'최근 동기화 성공':meta.status==='running'?'동기화 진행 중':meta.status==='error'?'동기화 실패':'동기화 기록 없음';
+  const backupTime=researchBackups[0]?.createdAt||'';
+  target.innerHTML='<div class="cloud-sync-metrics"><div><span>상태</span><strong>'+state+'</strong></div><div><span>마지막 성공</span><strong>'+escapeHtml(formatSyncTime(meta.lastSuccessAt)||'기록 없음')+'</strong></div><div><span>업로드</span><strong>'+formatNumber(meta.uploaded)+'건</strong></div><div><span>서버에서 읽음</span><strong>'+formatNumber(meta.downloaded)+'건</strong></div><div><span>자동 백업</span><strong>'+researchBackups.length+'/'+MAX_RESEARCH_BACKUPS+'개</strong></div><div><span>최근 백업</span><strong>'+escapeHtml(formatSyncTime(backupTime)||'아직 없음')+'</strong></div></div>'+
+    (meta.error?'<div class="cloud-sync-error">오류: '+escapeHtml(meta.error)+'</div>':'')+
+    '<div class="cloud-sync-actions"><button class="secondary" id="createResearchBackupBtn">지금 백업</button><button class="secondary" id="downloadResearchBackupBtn" '+(researchBackups.length?'':'disabled')+'>최근 백업 내보내기</button><button class="secondary" id="restoreResearchBackupBtn" '+(researchBackups.length?'':'disabled')+'>최근 백업 복원</button></div>'+
+    '<div class="analytics-mini">업로드/읽음 수는 마지막 성공 동기화에서 처리한 레코드 수입니다. 자동 백업은 하루에 최대 1회, 최근 5개를 이 브라우저에 보관합니다.</div>';
+  $('createResearchBackupBtn')?.addEventListener('click',()=>{if(createResearchBackup(true))toast('연구 이력 복원 지점을 만들었습니다.');});
+  $('downloadResearchBackupBtn')?.addEventListener('click',downloadLatestResearchBackup);
+  $('restoreResearchBackupBtn')?.addEventListener('click',restoreLatestResearchBackup);
+}
+function loadResearchBackups() {
+  try {
+    const rows=JSON.parse(localStorage.getItem(RESEARCH_BACKUPS_KEY)||'[]');
+    return Array.isArray(rows)?rows.filter(item=>item&&typeof item.createdAt==='string'&&Array.isArray(item.runs)).slice(0,MAX_RESEARCH_BACKUPS):[];
+  } catch (_) { return []; }
+}
+function persistResearchBackups() {
+  try { localStorage.setItem(RESEARCH_BACKUPS_KEY,JSON.stringify(researchBackups.slice(0,MAX_RESEARCH_BACKUPS))); return true; }
+  catch (_) { return false; }
+}
+function createResearchBackup(force=false) {
+  if(!researchHistory.length)return false;
+  const now=Date.now(), latestTime=Date.parse(researchBackups[0]?.createdAt||'')||0;
+  if(!force&&latestTime&&now-latestTime<86400000)return false;
+  const snapshot={createdAt:new Date(now).toISOString(),runs:JSON.parse(JSON.stringify(researchHistory)),
+    report:researchReport?JSON.parse(JSON.stringify(researchReport)):null,
+    candidates:JSON.parse(JSON.stringify(researchCandidates))};
+  const previous=researchBackups;
+  researchBackups=[snapshot,...researchBackups].slice(0,MAX_RESEARCH_BACKUPS);
+  if(!persistResearchBackups()){researchBackups=previous;toast('백업 저장 공간이 부족합니다. 기존 백업을 유지했습니다.');return false;}
+  renderCloudSyncStatus();
+  return true;
+}
+function downloadLatestResearchBackup() {
+  const backup=researchBackups[0]; if(!backup)return;
+  const payload={schema:'lucky645-research-history-v1',exportedAt:new Date().toISOString(),backupCreatedAt:backup.createdAt,runs:backup.runs};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='lucky645-research-backup-'+backup.createdAt.slice(0,10)+'.json';
+  document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+}
+function restoreLatestResearchBackup() {
+  const backup=researchBackups[0]; if(!backup)return;
+  if(!confirm('최근 자동 백업 '+formatSyncTime(backup.createdAt)+'을 현재 연구 이력과 병합할까요? 기존 이력은 삭제하지 않습니다.'))return;
+  const previous={history:researchHistory,report:researchReport,candidates:researchCandidates};
+  researchHistory=window.Lucky645ResearchHistory.mergeRuns(backup.runs,researchHistory);
+  if(backup.report&&(!researchReport||Date.parse(backup.report.createdAt)>Date.parse(researchReport.createdAt)))researchReport=backup.report;
+  researchCandidates=window.Lucky645ResearchHistory.mergeCandidates
+    ? window.Lucky645ResearchHistory.mergeCandidates(backup.candidates,researchCandidates)
+    : [...researchCandidates,...(backup.candidates||[]).filter(item=>!researchCandidates.some(row=>row.id===item.id))].slice(0,100);
+  if(!persistResearchState()){researchHistory=previous.history;researchReport=previous.report;researchCandidates=previous.candidates;return;}
+  renderResearchLab();if(cloudSession?.access_token)scheduleCloudSync();
+  toast('자동 백업을 현재 연구 이력과 병합했습니다.');
+}
+
 function loadCloudSession() {
   try { return JSON.parse(localStorage.getItem(CLOUD_SESSION_KEY) || 'null'); } catch (_) { return null; }
 }
@@ -2854,6 +2933,7 @@ function renderCloudAuth(message='') {
   if(status){status.textContent=signedIn?'로그인됨':'로그아웃';status.className='badge '+(signedIn?'green':'yellow');}
   if($('cloudUserEmail')) $('cloudUserEmail').textContent=cloudSession?.user?.email||'로그인 계정';
   if(message && $('cloudMessage')) $('cloudMessage').textContent=message;
+  renderCloudSyncStatus();
 }
 async function cloudSignUp() {
   const email=$('cloudEmail').value.trim(), password=$('cloudPassword').value;
@@ -2980,6 +3060,8 @@ async function cloudUpsert(rows, token) {
 async function performCloudSync() {
   if(!cloudSession?.user?.id) return;
   const message=$('cloudMessage');
+  cloudSyncMeta={...cloudSyncMeta,userId:cloudSession.user.id,status:'running',error:''};
+  persistCloudSyncMeta();
   if(message)message.textContent='클라우드 데이터를 안전하게 병합하는 중입니다…';
   const token=await cloudAccessToken();
   if(!token)throw new Error('로그인 세션이 만료됐습니다. 다시 로그인해 주세요.');
@@ -3083,7 +3165,12 @@ async function performCloudSync() {
   }));
   await cloudUpsert([...activeRows,...deletedRows],token);
   const researchSync = await syncResearchRuns(token);
-  if(message)message.textContent='동기화 완료: 저장 조합 '+saved.length+'개 · 확인 이력 '+savedCheckHistory.length+'건 · 연구 이력 '+researchHistory.length+'건 (클라우드에서 '+researchSync.downloaded+'건 확인, '+researchSync.uploaded+'건 업로드).';
+  const uploaded=activeRows.length+deletedRows.length+researchSync.uploaded;
+  const downloaded=remote.length+researchSync.downloaded;
+  cloudSyncMeta={userId:cloudSession.user.id,lastSuccessAt:new Date().toISOString(),uploaded,downloaded,status:'success',error:''};
+  persistCloudSyncMeta();
+  createResearchBackup(false);
+  if(message)message.textContent='동기화 완료: 저장 조합 '+saved.length+'개 · 확인 이력 '+savedCheckHistory.length+'건 · 연구 이력 '+researchHistory.length+'건 (업로드 '+uploaded+'건, 서버에서 읽음 '+downloaded+'건).';
 }
 async function syncCloudData() {
   if(!cloudSession?.user?.id) return;
@@ -3094,6 +3181,10 @@ async function syncCloudData() {
   cloudSyncPromise=performCloudSync();
   try {
     return await cloudSyncPromise;
+  } catch(error) {
+    cloudSyncMeta={...cloudSyncMeta,userId:cloudSession?.user?.id||'',status:'error',error:error?.message||String(error)};
+    persistCloudSyncMeta();
+    throw error;
   } finally {
     cloudSyncPromise=null;
     if(cloudSyncRequested) {

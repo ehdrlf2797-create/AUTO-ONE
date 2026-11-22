@@ -178,6 +178,8 @@
       <div id="cloudAccountPanel" style="display:none">
         <div class="split"><div><strong id="cloudUserEmail"></strong><div class="field-help">계정에 연결된 데이터는 본인만 접근할 수 있습니다.</div></div><div class="saved-tools"><button class="primary" id="cloudSyncNowBtn">지금 동기화</button><button class="secondary" id="cloudSignOutBtn">로그아웃</button></div></div>
       </div>
+      <div id="cloudSyncDetails" class="cloud-sync-details" aria-live="polite"></div>
+      <template id="cloudSyncActionTemplates"><button id="createResearchBackupBtn"></button><button id="downloadResearchBackupBtn"></button><button id="restoreResearchBackupBtn"></button></template>
       <div id="cloudMessage" class="notice" style="margin-top:12px">계정에 로그인하면 이 기기의 저장 번호와 확인 이력을 클라우드에 병합합니다. 기존 로컬 데이터는 유지됩니다.</div>
     </div>
     <div class="panel"><div class="panel-head"><div><div class="panel-title">저장된 조합</div><div class="panel-desc">즐겨찾기 표시와 파일 백업을 지원합니다.</div></div><div class="saved-actions"><span class="badge" id="savedCount">0 조합</span><button class="secondary" id="exportSavedBtn">백업 저장</button><button class="secondary" id="importSavedBtn">백업 불러오기</button><input id="savedImportFile" type="file" accept="application/json,.json"></div></div><div class="saved-filters"><button class="secondary active" data-saved-filter="all">전체</button><button class="secondary" data-saved-filter="favorites">★ 즐겨찾기</button></div><div id="savedList" class="empty">아직 저장된 번호가 없습니다.<br>번호 추천 페이지에서 마음에 드는 조합을 저장해 주세요.</div></div>
@@ -198,6 +200,6 @@
 <div class="toast" id="toast"></div>
 <script defer src="/assets/research.js?v=20261122-research-restore-1"></script>
 <script defer src="/assets/research-history.js?v=20261122-research-restore-1"></script>
-<script defer src="/assets/app.js?v=20261122-research-restore-1"></script>
+<script defer src="/assets/app.js?v=20261122-sync-status-1"></script>
 </body>
 </html>

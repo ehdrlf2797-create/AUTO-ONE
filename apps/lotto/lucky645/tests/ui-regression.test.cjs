@@ -59,7 +59,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-research-restore-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-sync-status-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -211,4 +211,25 @@ test('research lab includes randomized tournament and run-history comparison sur
   assert.match(app, /MAX_RESEARCH_HISTORY = 12/);
   assert.match(css, /\.research-history-row/);
   assert.match(css, /\.research-tournament-summary/);
+});
+
+
+test('cloud sync panel exposes status, counts, retry and backup management', () => {
+  assert.match(html, /id="cloudSyncDetails"/);
+  assert.match(html, /id="cloudSyncNowBtn"/);
+  assert.match(app, /lastSuccessAt/);
+  assert.match(app, /uploaded/);
+  assert.match(app, /downloaded/);
+  assert.match(app, /status:'error'/);
+  assert.match(app, /syncCloudData\(\)\.catch/);
+  assert.match(app, /MAX_RESEARCH_BACKUPS = 5/);
+  assert.match(app, /86400000/);
+  assert.match(app, /downloadLatestResearchBackup/);
+  assert.match(app, /restoreLatestResearchBackup/);
+});
+
+test('research backup restore merges with current records and rolls back on persistence failure', () => {
+  assert.match(app, /Lucky645ResearchHistory\.mergeRuns\(backup\.runs,researchHistory\)/);
+  assert.match(app, /if\(!persistResearchState\(\)\)\{researchHistory=previous\.history/);
+  assert.match(app, /현재 연구 이력과 병합할까요/);
 });
