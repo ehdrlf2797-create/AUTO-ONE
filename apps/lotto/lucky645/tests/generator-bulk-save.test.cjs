@@ -138,13 +138,14 @@ test('persistSaved commits the entire collection with one successful storage wri
   const persistEnd = appSource.indexOf('\nfunction persistDraws()', persistStart);
   const writes = [];
   let renderCount = 0;
+  const storage = { getItem() { return null; }, setItem(key, value) { writes.push([key, value]); }, removeItem() {} };
   const context = {
     SAVED_KEY: 'saved-key',
     saved: [{ id: 'existing' }],
-    localStorage: { getItem() { return null; }, setItem(key, value) { writes.push([key, value]); }, removeItem() {} },
-    appStorageGet(key) { return this.localStorage.getItem(key); },
-    appStorageSet(key,value) { return this.localStorage.setItem(key,value); },
-    appStorageRemove(key) { return this.localStorage.removeItem(key); },
+    localStorage: storage,
+    appStorageGet: key => storage.getItem(key),
+    appStorageSet: (key,value) => storage.setItem(key,value),
+    appStorageRemove: key => storage.removeItem(key),
     cloudApplying: true,
     savedBacktestResult: null,
     renderSaved() { renderCount++; },
