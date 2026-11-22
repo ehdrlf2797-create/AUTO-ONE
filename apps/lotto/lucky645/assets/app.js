@@ -690,13 +690,22 @@ function normalizeDraw(raw) {
     winners: Number.isFinite(item.winners) && item.winners >= 0 ? item.winners : null
   }));
 
-  // Keep sales and prize payouts separate. Ignore third-party totalSales aliases.
-  const salesValue = raw.wholEpsdSumNtslAmt == null || raw.wholEpsdSumNtslAmt === ''
-    ? null : Number(raw.wholEpsdSumNtslAmt);
+  // Official API: wholEpsdSumNtslAmt. Cashlogy CSV: totSellamnt.
+  // Do not treat third-party totalSales aliases as authoritative.
+  const salesValue = raw.wholEpsdSumNtslAmt != null && raw.wholEpsdSumNtslAmt !== ''
+    ? Number(raw.wholEpsdSumNtslAmt)
+    : (raw.totSellamnt == null || raw.totSellamnt === '' ? null : Number(raw.totSellamnt));
   const payoutValue = raw.rlvtEpsdSumNtslAmt ?? raw.totalPrizePayout;
   const payoutNumber = payoutValue == null || payoutValue === '' ? null : Number(payoutValue);
   const totalSales = Number.isSafeInteger(salesValue) && salesValue >= 0 ? salesValue : null;
-  const totalPrizePayout = Number.isSafeInteger(payoutNumber) && payoutNumber >= 0 ? payoutNumber : null;
+  let totalPrizePayout = Number.isSafeInteger(payoutNumber) && payoutNumber >= 0 ? payoutNumber : null;
+  // CSV exports rank-level individual prize and winner counts, so derive the total only
+  // when all five ranks are complete. The official aggregate always takes precedence.
+  if (totalPrizePayout === null && ranks.length === 5 &&
+      ranks.every(item => item.prize !== null && item.winners !== null)) {
+    const derivedPayout = ranks.reduce((sum, item) => sum + item.prize * item.winners, 0);
+    totalPrizePayout = Number.isSafeInteger(derivedPayout) ? derivedPayout : null;
+  }
 
   const dateRaw = String(raw.date ?? raw.ltRflYmd ?? raw.drwNoDate ?? '').trim();
   let date = '';
@@ -755,7 +764,35 @@ function mergeDraws(base, incoming) {
     const draw = item?.round && item?.numbers ? normalizeDraw(item) : null;
     if (!draw) continue;
     const current = map.get(draw.round);
-    if (!current || sourceTrust(draw.source) >= sourceTrust(current.source)) map.set(draw.round, draw);
+    if (!current) {
+      map.set(draw.round, draw);
+      continue;
+    }
+
+    // Preserve winning numbers from the more trusted source, but enrich missing
+    // financial fields from a lower-trust CSV backup instead of discarding them.
+    const preferred = sourceTrust(draw.source) >= sourceTrust(current.source) ? draw : current;
+    const fallback = preferred === draw ? current : draw;
+    const fallbackRanks = new Map((fallback.ranks || []).map(item => [item.rank, item]));
+    const preferredRanks = new Map((preferred.ranks || []).map(item => [item.rank, item]));
+    const ranks = [...new Set([...fallbackRanks.keys(), ...preferredRanks.keys()])]
+      .sort((a,b)=>a-b)
+      .map(rank => {
+        const main = preferredRanks.get(rank) || {};
+        const extra = fallbackRanks.get(rank) || {};
+        return {
+          rank,
+          prize: main.prize ?? extra.prize ?? null,
+          winners: main.winners ?? extra.winners ?? null
+        };
+      });
+    map.set(draw.round, {
+      ...fallback,
+      ...preferred,
+      totalSales: preferred.totalSales ?? fallback.totalSales ?? null,
+      totalPrizePayout: preferred.totalPrizePayout ?? fallback.totalPrizePayout ?? null,
+      ranks
+    });
   }
   return [...map.values()].sort((a,b)=>a.round-b.round);
 }
@@ -892,8 +929,9 @@ async function refreshData(showToast = true) {
       } catch (error) { errors.push(`최신 결과 보조 조회: ${error.message}`); }
     }
 
-    // 누적 JSON이 불완전하면 CSV 사본을 보조로 읽습니다.
-    if (!historicalSource || !isContinuousHistory(draws)) {
+    // CSV 사본은 회차 누락 보완뿐 아니라 JSON에 없는 공식 판매액도 채웁니다.
+    const needsCsvEnrichment = draws.some(draw => draw.totalSales == null || draw.totalPrizePayout == null);
+    if (!historicalSource || !isContinuousHistory(draws) || needsCsvEnrichment) {
       try {
         const csv = await getText(CSV_FALLBACK, 10000);
         const parsed = parseCsv(csv);
