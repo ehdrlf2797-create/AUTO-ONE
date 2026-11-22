@@ -83,6 +83,20 @@ test('CSV history parser maps total sales and derives complete rank payout total
   const [draw] = context.parseCsv(csv);
   assert.equal(draw.totalSales, 116992886000);
   assert.equal(draw.totalPrizePayout, 58496443856);
+
+  const incompleteRanks = context.normalizeDraw({
+    round: 1251,
+    numbers: [14, 18, 19, 29, 40, 45],
+    bonus: 1,
+    ranks: [
+      {rank:1, prize:10, winners:1},
+      {rank:1, prize:20, winners:1},
+      {rank:2, prize:10, winners:1},
+      {rank:3, prize:10, winners:1},
+      {rank:4, prize:10, winners:1}
+    ]
+  });
+  assert.equal(incompleteRanks.totalPrizePayout, null);
 });
 
 test('mergeDraws keeps trusted winning numbers and fills missing financial metrics from CSV', () => {
