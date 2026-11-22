@@ -240,3 +240,16 @@ test('automatic research restore points are isolated by signed-in account', () =
   assert.match(app, /String\(item\.userId\|\|'local'\)===owner/);
   assert.match(app, /userId:cloudSession\?\.user\?\.id\|\|'local'/);
 });
+
+
+test('account switching reloads account-scoped backups and preserves other accounts when persisting', () => {
+  assert.match(app, /researchBackups=loadResearchBackups\(\);\s*renderCloudAuth\(\);/);
+  assert.match(app, /const otherAccounts=stored\.filter\(item=>item&&String\(item\.userId\|\|'local'\)!==owner\)/);
+  assert.match(app, /const currentAccount=researchBackups\.map\(item=>\(\{\.\.\.item,userId:owner\}\)\)/);
+  assert.match(app, /function downloadLatestResearchBackup\(\)\s*\{\s*const backup=researchBackups\[0\]; if\(!backup\|\|String\(backup\.userId\|\|'local'\)!==\(cloudSession\?\.user\?\.id\|\|'local'\)\)return;/);
+});
+
+test('research sync uploads changed local winner for same run ID but not stale copies', () => {
+  assert.match(app, /selectRunsToUpload\(researchHistory, remoteReports\)/);
+  assert.match(researchHistorySource, /function selectRunsToUpload\(localRuns, remoteRuns\)/);
+});
