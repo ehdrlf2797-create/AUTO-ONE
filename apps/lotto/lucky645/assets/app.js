@@ -140,6 +140,7 @@ let researchHistory = loadResearchHistory(researchReport);
 let researchCompareRunId = '';
 let researchCandidates = loadResearchCandidates();
 let researchRunning = false;
+let researchRunGeneration = 0;
 let researchLastRunMessage = '';
 let researchLastRunTone = 'normal';
 let isRefreshing = false;
@@ -1144,6 +1145,8 @@ function updateResearchProgress(label, completed, total, stageOffset, stageScale
 
 async function runResearchLab() {
   if (researchRunning) return;
+  const runGeneration=researchRunGeneration;
+  const runOwner=cloudSession?.user?.id||'local';
   const message = $('researchRunMessage');
   const button = $('runResearchBtn');
   const showMessage = (text, tone = 'normal') => {
@@ -1193,6 +1196,7 @@ async function runResearchLab() {
 
   try {
     const report = await window.Lucky645Research.runStudy(validatedDraws, { strategyCount: 100, simulations: 1000000, baselineCount: 200 }, progress => {
+      if(runGeneration!==researchRunGeneration)return;
       if (progress.stage === 'baselines') {
         if (button) button.textContent = '무작위 참가자 '+progress.completed+'/'+progress.total;
         updateResearchProgress('2/4 무작위 기준선 '+progress.completed+' / '+progress.total+'명', progress.completed, progress.total, 0, 10);
@@ -1207,6 +1211,7 @@ async function runResearchLab() {
         if (message) message.textContent = '몬테카를로 무작위 추첨 계산 중입니다. '+formatNumber(progress.completed)+' / '+formatNumber(progress.total)+'회 완료.';
       }
     });
+    if(runGeneration!==researchRunGeneration||(cloudSession?.user?.id||'local')!==runOwner)return;
     report.elapsedMs = Date.now() - startedAt;
     researchReport = report;
     recordResearchRun(report);
@@ -1226,10 +1231,12 @@ async function runResearchLab() {
     showMessage(completion+(persisted?' 결과와 후보 목록을 이 브라우저에 저장했습니다.':' 계산은 완료했지만 브라우저 저장에 실패했습니다. 저장 공간을 확인해 주세요.'), persisted?'normal':'warning');
     toast('LUCKY 645 연구 완료 · 후보 '+newCandidates.length+'개');
   } catch (error) {
+    if(runGeneration!==researchRunGeneration)return;
     const detail = error && error.message ? error.message : String(error);
     showMessage('연구 실행 오류: '+detail+' 진행률과 브라우저 콘솔을 확인해 주세요.', 'error');
     toast('연구 실행 오류가 발생했습니다.');
   } finally {
+    if(runGeneration!==researchRunGeneration)return;
     researchRunning = false;
     if (button) {
       button.disabled = false;
@@ -2874,6 +2881,8 @@ function loadCloudSession() {
   try { return JSON.parse(appStorageGet(CLOUD_SESSION_KEY) || 'null'); } catch (_) { return null; }
 }
 function reloadAccountScopedState() {
+  researchRunGeneration++;
+  researchRunning=false;
   saved=loadSaved();
   savedCheckHistory=loadSavedCheckHistory();
   autoCheckMeta=loadAutoCheckMeta();
