@@ -283,6 +283,9 @@ test('account-owned browser records use isolated namespaces and migrate legacy d
   assert.match(app, /function reloadAccountScopedState\(\)/);
   assert.match(app, /if\(previousUserId!==nextUserId\)reloadAccountScopedState\(\)/);
   assert.match(app, /activateAccountStorageScope\(nextUserId\)/);
+  assert.match(app, /let researchRunGeneration = 0/);
+  assert.match(app, /if\(runGeneration!==researchRunGeneration\)return/);
+  assert.match(app, /researchRunGeneration\+\+/);
   for (const key of ['SAVED_KEY','SAVED_CHECKS_KEY','AUTO_CHECK_KEY','SIMULATION_HISTORY_KEY','RESEARCH_REPORT_KEY','RESEARCH_HISTORY_KEY','RESEARCH_CANDIDATES_KEY','CLOUD_SYNC_META_KEY']) {
     assert.match(app, new RegExp(key));
   }
