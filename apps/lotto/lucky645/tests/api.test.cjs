@@ -118,6 +118,36 @@ test('does not invent sales or payout when authoritative fields are absent', () 
   assert.equal(draw.totalPrizePayout, null);
 });
 
+test('derives payout from all five complete ranks without treating third-party totalSales as sales', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    totalSales: 116992886000,
+    ranks: [
+      {rank:1,prize:100,winners:2},
+      {rank:2,prize:20,winners:3},
+      {rank:3,prize:5,winners:4},
+      {rank:4,prize:4,winners:5},
+      {rank:5,prize:1,winners:6}
+    ]
+  });
+  assert.equal(draw.totalSales, null);
+  assert.equal(draw.totalPrizePayout, 306);
+});
+
+test('does not derive payout when any rank is incomplete', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    ranks: [
+      {rank:1,prize:100,winners:2},
+      {rank:2,prize:20,winners:3},
+      {rank:3,prize:5,winners:4},
+      {rank:4,prize:4,winners:5},
+      {rank:5,prize:5000,winners:null}
+    ]
+  });
+  assert.equal(draw.totalPrizePayout, null);
+});
+
 test('status endpoint documents that cache metrics are per serverless instance', async () => {
   const handler = require('../api/lotto.js');
   const response = {
