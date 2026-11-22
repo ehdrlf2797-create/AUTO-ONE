@@ -690,6 +690,14 @@ function normalizeDraw(raw) {
     winners: Number.isFinite(item.winners) && item.winners >= 0 ? item.winners : null
   }));
 
+  // Keep sales and prize payouts separate. Ignore third-party totalSales aliases.
+  const salesValue = raw.wholEpsdSumNtslAmt == null || raw.wholEpsdSumNtslAmt === ''
+    ? null : Number(raw.wholEpsdSumNtslAmt);
+  const payoutValue = raw.rlvtEpsdSumNtslAmt ?? raw.totalPrizePayout;
+  const payoutNumber = payoutValue == null || payoutValue === '' ? null : Number(payoutValue);
+  const totalSales = Number.isSafeInteger(salesValue) && salesValue >= 0 ? salesValue : null;
+  const totalPrizePayout = Number.isSafeInteger(payoutNumber) && payoutNumber >= 0 ? payoutNumber : null;
+
   const dateRaw = String(raw.date ?? raw.ltRflYmd ?? raw.drwNoDate ?? '').trim();
   let date = '';
   if (/^\d{8}$/.test(dateRaw)) date = `${dateRaw.slice(0,4)}-${dateRaw.slice(4,6)}-${dateRaw.slice(6,8)}`;
@@ -701,6 +709,8 @@ function normalizeDraw(raw) {
     numbers: sortNums(numbers),
     bonus,
     ranks,
+    totalSales,
+    totalPrizePayout,
     source: typeof raw.source === 'string' ? raw.source.slice(0, 80) : '공개 회차 데이터'
   };
 }
