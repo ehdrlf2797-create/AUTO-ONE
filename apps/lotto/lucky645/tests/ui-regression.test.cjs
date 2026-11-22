@@ -13,7 +13,7 @@ const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
 const researchHistorySource = fs.readFileSync(path.join(root, 'assets/research-history.js'), 'utf8');
 
 test('frontend draw normalization preserves official sales and payout without trusting third-party totalSales', () => {
-  const start = app.indexOf('function normalizeDraw(raw) {');
+  const start = app.indexOf('function sortNums(numbers)');
   const end = app.indexOf('\nfunction extractDraws(json)', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
