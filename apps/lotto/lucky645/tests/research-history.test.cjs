@@ -227,6 +227,10 @@ function restoreContext(initial = {}, options = {}) {
     researchHistory: oldHistory,
     researchCandidates: [{ id: 'keep', label: 'keep' }],
     cloudSession: null,
+    cloudSessionGeneration: 0,
+    assertAccountScope(expectedUserId,expectedGeneration) {
+      if(expectedUserId!=='local'||expectedGeneration!==0) throw new Error('account changed');
+    },
     confirm: () => true,
     toast() {},
     renderResearchLab() {},
