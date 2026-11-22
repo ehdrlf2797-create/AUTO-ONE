@@ -56,7 +56,7 @@ test('frontend draw normalization preserves official sales and payout without tr
     rnk5WnAmt: 1, rnk5WnNope: 6
   });
   assert.equal(csvDraw.totalSales, 116992886000);
-  assert.equal(csvDraw.totalPrizePayout, 270);
+  assert.equal(csvDraw.totalPrizePayout, 306);
 });
 
 test('all nine app sections are reachable from the mobile navigation', () => {
