@@ -94,6 +94,17 @@ function normalizeDraw(raw) {
   // Third-party mirrors may misuse `totalSales` for prize payouts; never trust it here.
   const rawSales = asInteger(raw.wholEpsdSumNtslAmt);
   const rawPrizePayout = asInteger(raw.rlvtEpsdSumNtslAmt ?? raw.totalPrizePayout);
+  // Prefer the official aggregate. If a source omits it, derive the payout only
+  // when all five ranks have both a valid per-winner prize and winner count.
+  let totalPrizePayout = rawPrizePayout !== null && rawPrizePayout >= 0 ? rawPrizePayout : null;
+  if (totalPrizePayout === null) {
+    const ranksByNumber = new Map(ranks.map(item => [item.rank, item]));
+    const completeRanks = [1, 2, 3, 4, 5].map(rank => ranksByNumber.get(rank));
+    if (completeRanks.every(item => item && item.prize !== null && item.winners !== null)) {
+      const derivedPayout = completeRanks.reduce((sum, item) => sum + item.prize * item.winners, 0);
+      if (Number.isSafeInteger(derivedPayout)) totalPrizePayout = derivedPayout;
+    }
+  }
   return {
     round,
     date,
@@ -101,7 +112,7 @@ function normalizeDraw(raw) {
     bonus,
     ranks,
     totalSales: rawSales !== null && rawSales >= 0 ? rawSales : null,
-    totalPrizePayout: rawPrizePayout !== null && rawPrizePayout >= 0 ? rawPrizePayout : null,
+    totalPrizePayout,
     source: typeof raw.source === 'string' ? raw.source : undefined
   };
 }
