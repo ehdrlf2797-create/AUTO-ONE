@@ -441,7 +441,7 @@ test('research history cloud sync paginates beyond the 1000-row REST cap', async
 
 test('research history pagination rejects invalid pages and caps excessive archives', async () => {
   const start = appSource.indexOf('async function fetchAllResearchRuns(token) {');
-  const end = appSource.indexOf('\nasync function syncResearchRuns(token)', start);
+  const end = appSource.indexOf('\nasync function syncResearchRuns(', start);
   const context = {
     async cloudRequest() { return { error: 'invalid' }; }
   };
