@@ -216,6 +216,7 @@ test('research lab includes randomized tournament and run-history comparison sur
 
 test('cloud sync panel exposes status, counts, retry and backup management', () => {
   assert.match(html, /id="cloudSyncDetails"/);
+  assert.match(html, /app\.css\?v=20261122-sync-status-1/);
   assert.match(html, /id="cloudSyncNowBtn"/);
   assert.match(app, /lastSuccessAt/);
   assert.match(app, /uploaded/);
@@ -232,4 +233,10 @@ test('research backup restore merges with current records and rolls back on pers
   assert.match(app, /Lucky645ResearchHistory\.mergeRuns\(backup\.runs,researchHistory\)/);
   assert.match(app, /if\(!persistResearchState\(\)\)\{researchHistory=previous\.history/);
   assert.match(app, /현재 연구 이력과 병합할까요/);
+});
+
+
+test('automatic research restore points are isolated by signed-in account', () => {
+  assert.match(app, /String\(item\.userId\|\|'local'\)===owner/);
+  assert.match(app, /userId:cloudSession\?\.user\?\.id\|\|'local'/);
 });

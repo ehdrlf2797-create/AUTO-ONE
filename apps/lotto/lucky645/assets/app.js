@@ -2756,7 +2756,8 @@ function renderCloudSyncStatus() {
 function loadResearchBackups() {
   try {
     const rows=JSON.parse(localStorage.getItem(RESEARCH_BACKUPS_KEY)||'[]');
-    return Array.isArray(rows)?rows.filter(item=>item&&typeof item.createdAt==='string'&&Array.isArray(item.runs)).slice(0,MAX_RESEARCH_BACKUPS):[];
+    const owner=cloudSession?.user?.id||'local';
+    return Array.isArray(rows)?rows.filter(item=>item&&String(item.userId||'local')===owner&&typeof item.createdAt==='string'&&Array.isArray(item.runs)).slice(0,MAX_RESEARCH_BACKUPS):[];
   } catch (_) { return []; }
 }
 function persistResearchBackups() {
@@ -2767,7 +2768,7 @@ function createResearchBackup(force=false) {
   if(!researchHistory.length)return false;
   const now=Date.now(), latestTime=Date.parse(researchBackups[0]?.createdAt||'')||0;
   if(!force&&latestTime&&now-latestTime<86400000)return false;
-  const snapshot={createdAt:new Date(now).toISOString(),runs:JSON.parse(JSON.stringify(researchHistory)),
+  const snapshot={userId:cloudSession?.user?.id||'local',createdAt:new Date(now).toISOString(),runs:JSON.parse(JSON.stringify(researchHistory)),
     report:researchReport?JSON.parse(JSON.stringify(researchReport)):null,
     candidates:JSON.parse(JSON.stringify(researchCandidates))};
   const previous=researchBackups;
@@ -2785,7 +2786,7 @@ function downloadLatestResearchBackup() {
   document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
 }
 function restoreLatestResearchBackup() {
-  const backup=researchBackups[0]; if(!backup)return;
+  const backup=researchBackups[0]; if(!backup||String(backup.userId||'local')!==(cloudSession?.user?.id||'local'))return;
   if(!confirm('최근 자동 백업 '+formatSyncTime(backup.createdAt)+'을 현재 연구 이력과 병합할까요? 기존 이력은 삭제하지 않습니다.'))return;
   const previous={history:researchHistory,report:researchReport,candidates:researchCandidates};
   researchHistory=window.Lucky645ResearchHistory.mergeRuns(backup.runs,researchHistory);
