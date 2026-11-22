@@ -355,6 +355,59 @@ test('cloud sync buckets remote rows in one pass without materializing a duplica
 
 
 
+test('cloud reads retry transient service failures with bounded backoff', async () => {
+  const start=appSource.indexOf('function cloudHeaders(token) {');
+  const end=appSource.indexOf('\\nasync function cloudAuth(',start);
+  assert.notEqual(start,-1); assert.notEqual(end,-1);
+  let calls=0, delays=[];
+  const context={
+    SUPABASE_URL:'https://project.supabase.co',
+    SUPABASE_PUBLISHABLE_KEY:'public-key',
+    fetch:async()=>{calls++;return calls===1
+      ? {ok:false,status:503,text:async()=>'{"message":"busy"}'}
+      : {ok:true,status:200,text:async()=>'[{"id":1}]'};},
+    setTimeout:(callback,delay)=>{delays.push(delay);callback();}
+  };
+  vm.runInNewContext(appSource.slice(start,end)+'\\nthis.cloudRequest=cloudRequest;',context);
+  const result=await context.cloudRequest('/rest/v1/items?select=*',{method:'GET'},'token');
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),[{id:1}]);
+  assert.equal(calls,2);
+  assert.deepEqual(delays,[300]);
+});
+
+test('cloud requests do not retry authorization or validation failures', async () => {
+  const start=appSource.indexOf('function cloudHeaders(token) {');
+  const end=appSource.indexOf('\\nasync function cloudAuth(',start);
+  let calls=0, delays=0;
+  const context={
+    SUPABASE_URL:'https://project.supabase.co',SUPABASE_PUBLISHABLE_KEY:'public-key',
+    fetch:async()=>{calls++;return {ok:false,status:403,text:async()=>'{"message":"forbidden"}'};},
+    setTimeout:(callback)=>{delays++;callback();}
+  };
+  vm.runInNewContext(appSource.slice(start,end)+'\\nthis.cloudRequest=cloudRequest;',context);
+  await assert.rejects(context.cloudRequest('/rest/v1/items',{method:'GET'},'token'),error=>error.status===403);
+  assert.equal(calls,1);
+  assert.equal(delays,0);
+});
+
+test('cloud upsert retries only explicit merge-duplicate PostgREST writes', async () => {
+  const start=appSource.indexOf('function cloudHeaders(token) {');
+  const end=appSource.indexOf('\\nasync function cloudAuth(',start);
+  let calls=0;
+  const context={
+    SUPABASE_URL:'https://project.supabase.co',SUPABASE_PUBLISHABLE_KEY:'public-key',
+    fetch:async()=>{calls++;return calls===1
+      ? {ok:false,status:504,text:async()=>'{"message":"gateway timeout"}'}
+      : {ok:true,status:204,text:async()=>''};},
+    setTimeout:(callback)=>callback()
+  };
+  vm.runInNewContext(appSource.slice(start,end)+'\\nthis.cloudRequest=cloudRequest;',context);
+  await context.cloudRequest('/rest/v1/items?on_conflict=user_id,id',{
+    method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:'[]'
+  },'token');
+  assert.equal(calls,2);
+});
+
 test('research history cloud sync paginates beyond the 1000-row REST cap', async () => {
   const start = appSource.indexOf('async function fetchAllResearchRuns(token) {');
   const end = appSource.indexOf('\nasync function syncResearchRuns(token)', start);
