@@ -116,6 +116,7 @@ test('sync failure still releases the lock and schedules a requested retry', asy
   let scheduled = 0;
   const context = {
     cloudSession: { user: { id: 'user-a' } },
+    cloudSessionGeneration: 0,
     cloudSyncPromise: null,
     cloudSyncRequested: false,
     performCloudSync() {
