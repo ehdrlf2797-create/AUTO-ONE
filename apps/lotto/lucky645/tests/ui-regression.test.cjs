@@ -180,7 +180,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /id="exportResearchHistoryBtn"/);
   assert.match(html, /id="importResearchHistoryBtn"/);
   assert.match(html, /id="researchHistoryImportFile"/);
-  assert.match(html, /\/assets\/research-history\.js\?v=20261122-research-restore-1/);
+  assert.match(html, /\/assets\/research-history\.js\?v=20261122-sync-conflicts-1/);
   assert.match(app, /function importResearchHistoryFile\(file\)/);
   assert.match(app, /function renderResearchHistory\(\)/);
   assert.match(app, /function exportResearchHistory\(\)/);
