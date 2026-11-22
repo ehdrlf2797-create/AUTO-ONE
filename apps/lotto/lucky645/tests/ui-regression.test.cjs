@@ -231,7 +231,8 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-import-session-guard-1"><\/script>/);
+  assert.ok(html.includes('<link rel="stylesheet" href="/assets/app.css?v=20261123-sales-payout-ui-1" />'));
+  assert.ok(html.includes('<script defer src="/assets/app.js?v=20261123-sales-payout-ui-1"></script>'));
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -504,4 +505,74 @@ test('asynchronous backup imports stay pinned to the account that started the im
   assert.match(app, /async function importSavedBackup\(file\)[\s\S]*?const importOwner=cloudSession\?\.user\?\.id\|\|'local';[\s\S]*?const importGeneration=cloudSessionGeneration;[\s\S]*?const fileText=await file\.text\(\);[\s\S]*?assertAccountScope\(importOwner,importGeneration\)/);
   assert.match(app, /async function importResearchHistoryFile\(file\)[\s\S]*?const importOwner=cloudSession\?\.user\?\.id\|\|'local';[\s\S]*?const importGeneration=cloudSessionGeneration;[\s\S]*?const fileText=await file\.text\(\);[\s\S]*?assertAccountScope\(importOwner,importGeneration\)/);
   assert.match(app, /syncResearchRuns\(token,importOwner,importGeneration\)/);
+});
+
+
+test('latest draw card renders sales and total payout independently and never turns missing values into zero', () => {
+  assert.ok(html.includes('id="latestSales"'));
+  assert.ok(html.includes('id="latestPayout"'));
+  const start = app.indexOf('function renderLatest()');
+  const end = app.indexOf('\\nfunction loadResearchReport()', start);
+  assert.ok(start >= 0 && end > start);
+  const elements = Object.fromEntries([
+    'latestRound','latestBalls','latestVerification','latestDate','latestSourceLabel',
+    'latestBonus','latestSales','latestPayout','checkRound','statDrawCount'
+  ].map(id => [id, {textContent:'',innerHTML:'',className:'',value:''}]));
+  const draw = {
+    round:1251,date:'2026-11-21',numbers:[14,18,19,29,40,45],bonus:1,
+    totalSales:116992886000,totalPrizePayout:58496443856
+  };
+  const context = {
+    $: id => elements[id],
+    latest:draw,
+    draws:[draw],
+    latestVerification:'official',
+    FALLBACK_DRAW:{source:'fallback'},
+    hasRealDrawData:()=>true,
+    ball:number=>`[${number}]`,
+    formatDrawMoney:value=>value == null ? '자료 없음' : `${Number(value).toLocaleString('ko-KR')}원`,
+    formatNumber:value=>Number(value||0).toLocaleString('ko-KR')
+  };
+  vm.runInNewContext(app.slice(start,end)+'\\nthis.renderLatest=renderLatest;',context);
+  context.renderLatest();
+  assert.equal(elements.latestSales.textContent,'116,992,886,000원');
+  assert.equal(elements.latestPayout.textContent,'58,496,443,856원');
+  context.latest={...draw,totalSales:null,totalPrizePayout:null};
+  context.renderLatest();
+  assert.equal(elements.latestSales.textContent,'자료 없음');
+  assert.equal(elements.latestPayout.textContent,'자료 없음');
+});
+
+test('draw history table shows distinct sales and payout columns with explicit missing values', () => {
+  const start = app.indexOf('function renderHistory()');
+  const end = app.indexOf('\\nasync function getDraw(', start);
+  assert.ok(start >= 0 && end > start);
+  const elements = {
+    historyPageLabel:{textContent:''},
+    prevHistory:{disabled:false},
+    nextHistory:{disabled:false},
+    historyList:{innerHTML:''}
+  };
+  const draw = {
+    round:1251,date:'2026-11-21',numbers:[14,18,19,29,40,45],bonus:1,
+    ranks:[{rank:1,winners:14}],totalSales:116992886000,totalPrizePayout:58496443856
+  };
+  const context = {
+    draws:[draw],historySearchActive:false,filteredHistory:null,historyPage:0,
+    $:id=>elements[id],
+    ball:number=>`[${number}]`,
+    escapeHtml:String,
+    formatNumber:value=>Number(value||0).toLocaleString('ko-KR'),
+    formatDrawMoney:value=>value == null ? '자료 없음' : `${Number(value).toLocaleString('ko-KR')}원`
+  };
+  vm.runInNewContext(app.slice(start,end)+'\\nthis.renderHistory=renderHistory;',context);
+  context.renderHistory();
+  assert.ok(elements.historyList.innerHTML.includes('<th>판매액</th>'));
+  assert.ok(elements.historyList.innerHTML.includes('<th>총 당첨금</th>'));
+  assert.ok(elements.historyList.innerHTML.includes('116,992,886,000원'));
+  assert.ok(elements.historyList.innerHTML.includes('58,496,443,856원'));
+  draw.totalSales=null;
+  draw.totalPrizePayout=null;
+  context.renderHistory();
+  assert.equal((elements.historyList.innerHTML.match(/자료 없음/g)||[]).length,2);
 });
