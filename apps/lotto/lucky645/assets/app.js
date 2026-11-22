@@ -1305,7 +1305,7 @@ async function syncResearchRuns(token) {
   });
   const merged = window.Lucky645ResearchHistory.mergeRuns(remoteReports, researchHistory);
   const remoteIds = new Set(remoteReports.map(item => item.runId));
-  const upload = researchHistory.filter(item => !remoteIds.has(item.runId || item.createdAt));
+  const upload = window.Lucky645ResearchHistory.selectRunsToUpload(researchHistory, remoteReports);
   if (upload.length) {
     const rows = upload.map(report => ({ user_id: cloudSession.user.id, run_id: report.runId || report.createdAt, report, created_at: report.createdAt, updated_at: new Date().toISOString() }));
     await cloudRequest('/rest/v1/lucky645_research_runs?on_conflict=user_id,run_id', {
@@ -2761,8 +2761,21 @@ function loadResearchBackups() {
   } catch (_) { return []; }
 }
 function persistResearchBackups() {
-  try { localStorage.setItem(RESEARCH_BACKUPS_KEY,JSON.stringify(researchBackups.slice(0,MAX_RESEARCH_BACKUPS))); return true; }
-  catch (_) { return false; }
+  try {
+    const owner=cloudSession?.user?.id||'local';
+    let stored=[];
+    try { const parsed=JSON.parse(localStorage.getItem(RESEARCH_BACKUPS_KEY)||'[]'); if(Array.isArray(parsed))stored=parsed; } catch (_) {}
+    const otherAccounts=stored.filter(item=>item&&String(item.userId||'local')!==owner);
+    const currentAccount=researchBackups.map(item=>({...item,userId:owner}));
+    const combined=[...currentAccount,...otherAccounts],counts=new Map(),kept=[];
+    for(const item of combined){
+      const account=String(item.userId||'local'),count=counts.get(account)||0;
+      if(count>=MAX_RESEARCH_BACKUPS)continue;
+      counts.set(account,count+1);kept.push(item);
+    }
+    localStorage.setItem(RESEARCH_BACKUPS_KEY,JSON.stringify(kept));
+    return true;
+  } catch (_) { return false; }
 }
 function createResearchBackup(force=false) {
   if(!researchHistory.length)return false;
@@ -2778,7 +2791,7 @@ function createResearchBackup(force=false) {
   return true;
 }
 function downloadLatestResearchBackup() {
-  const backup=researchBackups[0]; if(!backup)return;
+  const backup=researchBackups[0]; if(!backup||String(backup.userId||'local')!==(cloudSession?.user?.id||'local'))return;
   const payload={schema:'lucky645-research-history-v1',exportedAt:new Date().toISOString(),backupCreatedAt:backup.createdAt,runs:backup.runs};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'});
   const url=URL.createObjectURL(blob),link=document.createElement('a');
@@ -2805,6 +2818,7 @@ function loadCloudSession() {
 function saveCloudSession(session) {
   cloudSession = session || null;
   try { if (cloudSession) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(cloudSession)); else localStorage.removeItem(CLOUD_SESSION_KEY); } catch (_) {}
+  researchBackups=loadResearchBackups();
   renderCloudAuth();
 }
 function cloudTombstonesStorageKey() {

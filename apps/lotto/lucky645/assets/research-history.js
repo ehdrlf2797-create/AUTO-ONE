@@ -64,7 +64,22 @@
     }
     return Array.from(byId.values()).sort((a,b) => Date.parse(b.createdAt)-Date.parse(a.createdAt)).slice(0, MAX_RUNS);
   }
-  const api = { normalizeReport, normalizeArchive, mergeRuns, MAX_RUNS };
+  function selectRunsToUpload(localRuns, remoteRuns) {
+    const local = (Array.isArray(localRuns) ? localRuns : []).map(normalizeReport);
+    const remote = (Array.isArray(remoteRuns) ? remoteRuns : []).map(normalizeReport);
+    const merged = new Map(mergeRuns(remote, local).map(item => [item.runId || item.createdAt, item]));
+    const remoteById = new Map(remote.map(item => [item.runId || item.createdAt, item]));
+    return local.filter(item => {
+      const key = item.runId || item.createdAt;
+      const remoteItem = remoteById.get(key);
+      if (!remoteItem) return true;
+      const selected = merged.get(key);
+      // Upload only when local wins the conflict resolution and its content differs.
+      return JSON.stringify(selected) === JSON.stringify(item) &&
+        JSON.stringify(item) !== JSON.stringify(remoteItem);
+    });
+  }
+  const api = { normalizeReport, normalizeArchive, mergeRuns, selectRunsToUpload, MAX_RUNS };
   root.Lucky645ResearchHistory = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
