@@ -46,6 +46,9 @@ function contextWithStorage(initial = {}) {
   };
   const context = {
     localStorage: storage,
+    appStorageGet(key) { return storage.getItem(key); },
+    appStorageSet(key,value) { return storage.setItem(key,value); },
+    appStorageRemove(key) { return storage.removeItem(key); },
     window: { Lucky645ResearchHistory: historyHelpers },
     RESEARCH_HISTORY_KEY: 'history',
     RESEARCH_REPORT_KEY: 'report',
