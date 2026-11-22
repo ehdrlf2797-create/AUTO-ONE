@@ -60,7 +60,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-account-sync-guard-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-account-data-scope-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -180,7 +180,7 @@ test('research lab is reachable and exposes fixed research configuration', () =>
   assert.match(html, /id="exportResearchHistoryBtn"/);
   assert.match(html, /id="importResearchHistoryBtn"/);
   assert.match(html, /id="researchHistoryImportFile"/);
-  assert.match(html, /\/assets\/research-history\.js\?v=20261122-account-sync-guard-1/);
+  assert.match(html, /\/assets\/research-history\.js\?v=20261122-account-data-scope-1/);
   assert.match(app, /function importResearchHistoryFile\(file\)/);
   assert.match(app, /function renderResearchHistory\(\)/);
   assert.match(app, /function exportResearchHistory\(\)/);
@@ -217,7 +217,7 @@ test('research lab includes randomized tournament and run-history comparison sur
 
 test('cloud sync panel exposes status, counts, retry and backup management', () => {
   assert.match(html, /id="cloudSyncDetails"/);
-  assert.match(html, /app\.css\?v=20261122-account-sync-guard-1/);
+  assert.match(html, /app\.css\?v=20261122-account-data-scope-1/);
   assert.match(html, /id="cloudSyncNowBtn"/);
   assert.match(app, /lastSuccessAt/);
   assert.match(app, /uploaded/);
@@ -269,4 +269,60 @@ test('switching or signing out during cloud sync invalidates the old sync genera
   assert.match(app, /if\(previousUserId!==nextUserId\)\{\s*cloudSessionGeneration\+\+/);
   assert.match(app, /if\(cloudSyncPromise\)cloudSyncRequested=Boolean\(nextUserId\)/);
   assert.match(app, /if\(cloudSessionGeneration===syncGeneration&&cloudSession\?\.user\?\.id===syncUserId\)/);
+});
+
+
+test('account-owned browser records use isolated namespaces and migrate legacy data only to the first account', () => {
+  assert.match(app, /const ACCOUNT_SCOPED_KEYS = new Set\(/);
+  assert.match(app, /function accountScopedStorageKey\(key,\s*userId\)/);
+  assert.match(app, /key\+'::'\+String\(owner\)/);
+  assert.match(app, /if\(seen\.length===0\)/);
+  assert.match(app, /localStorage\.removeItem\(key\)/);
+  assert.match(app, /function appStorageGet\(key\)/);
+  assert.match(app, /function appStorageSet\(key,value\)/);
+  assert.match(app, /function reloadAccountScopedState\(\)/);
+  assert.match(app, /if\(previousUserId!==nextUserId\)reloadAccountScopedState\(\)/);
+  assert.match(app, /activateAccountStorageScope\(nextUserId\)/);
+  assert.match(app, /let researchRunGeneration = 0/);
+  assert.match(app, /if\(runGeneration!==researchRunGeneration\)return/);
+  assert.match(app, /researchRunGeneration\+\+/);
+  for (const key of ['SAVED_KEY','SAVED_CHECKS_KEY','AUTO_CHECK_KEY','SIMULATION_HISTORY_KEY','RESEARCH_REPORT_KEY','RESEARCH_HISTORY_KEY','RESEARCH_CANDIDATES_KEY','CLOUD_SYNC_META_KEY']) {
+    assert.match(app, new RegExp(key));
+  }
+});
+
+
+test('account storage scopes isolate users and migrate legacy records only once', () => {
+  const start=app.indexOf('const ACCOUNT_SCOPED_KEYS = new Set([');
+  const end=app.indexOf('activateAccountStorageScope(cloudSession?.user?.id);',start);
+  assert.ok(start>=0 && end>start);
+  const storage=new Map([['lucky645_saved','legacy-ticket-data']]);
+  const localStorage={
+    getItem:key=>storage.has(key)?storage.get(key):null,
+    setItem:(key,value)=>storage.set(key,String(value)),
+    removeItem:key=>storage.delete(key)
+  };
+  const context={
+    localStorage,cloudSession:null,
+    SAVED_KEY:'lucky645_saved',SAVED_CHECKS_KEY:'lucky645_saved_check_history_v1',
+    AUTO_CHECK_KEY:'lucky645_auto_check_meta_v1',SIMULATION_HISTORY_KEY:'lucky645_simulation_history_v1',
+    RESEARCH_REPORT_KEY:'lucky645_research_report_v1',RESEARCH_HISTORY_KEY:'lucky645_research_history_v1',
+    RESEARCH_CANDIDATES_KEY:'lucky645_research_candidates_v1',CLOUD_SYNC_META_KEY:'lucky645_cloud_sync_meta_v1'
+  };
+  vm.runInNewContext(app.slice(start,end),context);
+  context.activateAccountStorageScope('account-A');
+  assert.equal(storage.get('lucky645_saved::account-A'),'legacy-ticket-data');
+  assert.equal(storage.has('lucky645_saved'),false);
+  context.cloudSession={user:{id:'account-A'}};
+  context.appStorageSet(context.SAVED_KEY,'account-A-ticket');
+  context.activateAccountStorageScope('account-B');
+  context.cloudSession={user:{id:'account-B'}};
+  assert.equal(context.appStorageGet(context.SAVED_KEY),null);
+  context.appStorageSet(context.SAVED_KEY,'account-B-ticket');
+  context.cloudSession=null;
+  assert.equal(context.appStorageGet(context.SAVED_KEY),null);
+  context.cloudSession={user:{id:'account-A'}};
+  assert.equal(context.appStorageGet(context.SAVED_KEY),'account-A-ticket');
+  context.cloudSession={user:{id:'account-B'}};
+  assert.equal(context.appStorageGet(context.SAVED_KEY),'account-B-ticket');
 });

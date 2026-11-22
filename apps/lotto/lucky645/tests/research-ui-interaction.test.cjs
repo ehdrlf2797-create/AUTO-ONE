@@ -72,6 +72,8 @@ function makeContext(engineOverride) {
     researchCompareRunId: '',
     MAX_RESEARCH_HISTORY: 12,
     researchRunning: false,
+    researchRunGeneration: 0,
+    cloudSession: null,
     researchLastRunMessage: '',
     researchLastRunTone: 'normal',
     $: id => nodes[id] || null,

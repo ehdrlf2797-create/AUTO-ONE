@@ -33,6 +33,9 @@ function createHarness({ session, storedSession, authError, beforeAuthFailure } 
     cloudSession: session || null,
     CLOUD_SESSION_KEY: 'lucky645_cloud_session_v1',
     localStorage: storage,
+    appStorageGet: key => storage.getItem(key),
+    appStorageSet: (key,value) => storage.setItem(key,value),
+    appStorageRemove: key => storage.removeItem(key),
     saveCalls: [],
     saveCloudSession(nextSession) {
       context.cloudSession = nextSession || null;

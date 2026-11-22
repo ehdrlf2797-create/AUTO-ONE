@@ -13,7 +13,7 @@ const tombstoneEnd = appSource.indexOf('\nfunction markCloudDeleted(', tombstone
 assert.notEqual(tombstoneStart, -1, 'cloud tombstone storage helpers must exist');
 assert.notEqual(tombstoneEnd, -1, 'cloud tombstone helpers must end before markCloudDeleted');
 
-const tombstoneSource = appSource.slice(tombstoneStart, tombstoneEnd);
+const tombstoneSource = 'function appStorageGet(key){return localStorage.getItem(key);}\nfunction appStorageSet(key,value){return localStorage.setItem(key,value);}\nfunction appStorageRemove(key){return localStorage.removeItem(key);}\n' + appSource.slice(tombstoneStart, tombstoneEnd);
 
 const syncStart = appSource.indexOf('async function syncCloudData() {');
 const syncEnd = appSource.indexOf('\nfunction scheduleCloudSync()', syncStart);

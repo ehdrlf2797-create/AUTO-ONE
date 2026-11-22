@@ -112,7 +112,10 @@ test('persistSaved is atomic when browser storage is full', () => {
   const context = {
     SAVED_KEY: 'saved-key',
     saved: [{ id: 'existing' }],
-    localStorage: { setItem() { throw new Error('quota exceeded'); } },
+    localStorage: { getItem() { return null; }, setItem() { throw new Error('quota exceeded'); }, removeItem() {} },
+    appStorageGet: key => context.localStorage.getItem(key),
+    appStorageSet: (key,value) => context.localStorage.setItem(key,value),
+    appStorageRemove: key => context.localStorage.removeItem(key),
     cloudApplying: true,
     savedBacktestResult: null,
     renderSaved() { throw new Error('must not render after failed write'); },
@@ -135,10 +138,14 @@ test('persistSaved commits the entire collection with one successful storage wri
   const persistEnd = appSource.indexOf('\nfunction persistDraws()', persistStart);
   const writes = [];
   let renderCount = 0;
+  const storage = { getItem() { return null; }, setItem(key, value) { writes.push([key, value]); }, removeItem() {} };
   const context = {
     SAVED_KEY: 'saved-key',
     saved: [{ id: 'existing' }],
-    localStorage: { setItem(key, value) { writes.push([key, value]); } },
+    localStorage: storage,
+    appStorageGet: key => storage.getItem(key),
+    appStorageSet: (key,value) => storage.setItem(key,value),
+    appStorageRemove: key => storage.removeItem(key),
     cloudApplying: true,
     savedBacktestResult: null,
     renderSaved() { renderCount++; },
