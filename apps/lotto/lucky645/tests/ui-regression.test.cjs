@@ -12,6 +12,38 @@ const css = fs.readFileSync(path.join(root, 'assets/app.css'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
 const researchHistorySource = fs.readFileSync(path.join(root, 'assets/research-history.js'), 'utf8');
 
+test('frontend draw normalization preserves official sales and payout without trusting third-party totalSales', () => {
+  const start = app.indexOf('function normalizeDraw(raw) {');
+  const end = app.indexOf('\nfunction extractDraws(json)', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const context = {};
+  vm.runInNewContext(
+    app.slice(start, end) + '\nthis.normalizeDraw = normalizeDraw;',
+    context
+  );
+
+  const base = {
+    round: 1250,
+    numbers: [1, 5, 18, 23, 27, 28],
+    bonus: 8,
+    totalSales: 58496443856,
+    wholEpsdSumNtslAmt: 116992886000,
+    rlvtEpsdSumNtslAmt: 58496443856
+  };
+  const draw = context.normalizeDraw(base);
+  assert.equal(draw.totalSales, 116992886000);
+  assert.equal(draw.totalPrizePayout, 58496443856);
+
+  const missingOfficialSales = context.normalizeDraw({
+    ...base,
+    wholEpsdSumNtslAmt: undefined,
+    rlvtEpsdSumNtslAmt: undefined
+  });
+  assert.equal(missingOfficialSales.totalSales, null);
+  assert.equal(missingOfficialSales.totalPrizePayout, null);
+});
+
 test('all nine app sections are reachable from the mobile navigation', () => {
   const navStart = html.indexOf('<nav class="mobile-nav"');
   assert.notEqual(navStart, -1, 'mobile navigation must exist');
