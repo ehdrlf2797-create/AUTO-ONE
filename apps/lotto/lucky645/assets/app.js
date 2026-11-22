@@ -70,6 +70,7 @@ function activateAccountStorageScope(userId) {
   // Only the first account may adopt legacy anonymous data. Once any account has
   // been used, a different account starts with its own empty namespace.
   if(seen.length===0) {
+    let migrationSucceeded=true;
     for(const key of ACCOUNT_SCOPED_KEYS) {
       const target=accountScopedStorageKey(key,String(userId));
       try {
@@ -79,9 +80,11 @@ function activateAccountStorageScope(userId) {
         }
         localStorage.removeItem(key);
       } catch (_) {
+        migrationSucceeded=false;
         // Keep the legacy value if the scoped copy cannot be written.
       }
     }
+    if(!migrationSucceeded)return false;
   }
   seen.push(String(userId));
   try { localStorage.setItem(ACCOUNT_SCOPE_SEEN_KEY,JSON.stringify([...new Set(seen)])); } catch (_) {}
