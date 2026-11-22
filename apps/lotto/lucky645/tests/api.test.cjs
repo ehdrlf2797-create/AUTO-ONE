@@ -85,15 +85,37 @@ test('does not disguise an invalid newest official row as an older valid round',
   assert.equal(extractOfficialLatest({data:{list:[officialRound, invalidNewest]}}), null);
 });
 
-test('negative optional prize, winner and sales values are discarded', () => {
+test('negative optional prize, winner, sales and payout values are discarded', () => {
   const draw = normalizeDraw({
     ...officialRound,
     ranks:[{rank:1,prize:-100,winners:-1}],
-    wholEpsdSumNtslAmt:-500
+    wholEpsdSumNtslAmt:-500,
+    rlvtEpsdSumNtslAmt:-700
   });
   assert.equal(draw.ranks[0].prize, null);
   assert.equal(draw.ranks[0].winners, null);
   assert.equal(draw.totalSales, null);
+  assert.equal(draw.totalPrizePayout, null);
+});
+
+test('ignores a third-party totalSales field and uses only official sales amount', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    totalSales: 58496443856,
+    wholEpsdSumNtslAmt: 116992886000,
+    rlvtEpsdSumNtslAmt: 58496443856
+  });
+  assert.equal(draw.totalSales, 116992886000);
+  assert.equal(draw.totalPrizePayout, 58496443856);
+});
+
+test('does not invent sales or payout when authoritative fields are absent', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    totalSales: 58496443856
+  });
+  assert.equal(draw.totalSales, null);
+  assert.equal(draw.totalPrizePayout, null);
 });
 
 test('status endpoint documents that cache metrics are per serverless instance', async () => {
