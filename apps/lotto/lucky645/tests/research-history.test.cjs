@@ -228,12 +228,12 @@ function restoreContext(initial = {}, options = {}) {
   };
   vm.createContext(context);
   const persistStart = appSource.indexOf('function persistResearchState()');
-  const persistEnd = appSource.indexOf('\\nfunction renderResearchResults()', persistStart);
+  const persistEnd = appSource.indexOf('\nfunction renderResearchResults()', persistStart);
   const importStart = appSource.indexOf('async function importResearchHistoryFile(file)');
-  const importEnd = appSource.indexOf('\\nasync function fetchAllResearchRuns(token)', importStart);
+  const importEnd = appSource.indexOf('\nasync function fetchAllResearchRuns(token)', importStart);
   assert.ok(persistStart >= 0 && persistEnd > persistStart);
   assert.ok(importStart >= 0 && importEnd > importStart);
-  vm.runInContext(appSource.slice(persistStart, persistEnd) + '\\n' + appSource.slice(importStart, importEnd), context);
+  vm.runInContext(appSource.slice(persistStart, persistEnd) + '\n' + appSource.slice(importStart, importEnd), context);
   return { context, data };
 }
 
