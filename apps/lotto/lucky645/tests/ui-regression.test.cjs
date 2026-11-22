@@ -60,7 +60,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 });
 
 test('static JavaScript uses an explicit cache-busting version', () => {
-  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-sync-status-1"><\/script>/);
+  assert.match(html, /<script defer src="\/assets\/app\.js\?v=20261122-sync-conflicts-1"><\/script>/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
@@ -217,7 +217,7 @@ test('research lab includes randomized tournament and run-history comparison sur
 
 test('cloud sync panel exposes status, counts, retry and backup management', () => {
   assert.match(html, /id="cloudSyncDetails"/);
-  assert.match(html, /app\.css\?v=20261122-sync-status-1/);
+  assert.match(html, /app\.css\?v=20261122-sync-conflicts-1/);
   assert.match(html, /id="cloudSyncNowBtn"/);
   assert.match(app, /lastSuccessAt/);
   assert.match(app, /uploaded/);
