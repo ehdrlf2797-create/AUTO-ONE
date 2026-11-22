@@ -61,11 +61,11 @@ test('frontend draw normalization preserves official sales and payout without tr
 
 test('historical ambiguous totalSales aliases cannot overwrite CSV sales or rank payout', () => {
   const start = app.indexOf('function sortNums(numbers)');
-  const end = app.indexOf('\\nfunction extractDraws(json)', start);
+  const end = app.indexOf('\nfunction extractDraws(json)', start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const context = {};
-  vm.runInNewContext(app.slice(start, end) + '\\nthis.normalizeDraw = normalizeDraw;', context);
+  vm.runInNewContext(app.slice(start, end) + '\nthis.normalizeDraw = normalizeDraw;', context);
 
   const round289 = context.normalizeDraw({
     round: 289,
