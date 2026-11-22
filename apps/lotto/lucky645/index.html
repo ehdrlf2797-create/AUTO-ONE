@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0b111b" />
 <meta name="description" content="LUCKY 645에서 로또 6/45 공식 당첨 결과, 번호 통계, 조합 생성과 나만의 번호 보관함을 확인하세요." />
 <title>LUCKY 645 v1.9 | 로또 번호 추천</title>
-<link rel="stylesheet" href="/assets/app.css?v=20261122-import-session-guard-1" />
+<link rel="stylesheet" href="/assets/app.css?v=20261123-sales-payout-ui-1" />
 </head>
 <body>
 <div class="app">
@@ -32,7 +32,7 @@
   <section class="page active" id="page-home">
     <div class="hero">
       <div class="hero-card"><div class="hero-kicker">LUCKY 645 · NUMBER STUDIO</div><h1>행운의 조합,<br>오늘은 어떤 숫자일까요?</h1><p>무작위 추천부터 과거 회차 통계까지. 마음에 드는 조합을 만들고 저장해 보세요.</p><button class="primary" onclick="navigate('generator')">번호 추천 시작하기&nbsp; ↗</button></div>
-      <div class="latest-card"><div class="card-top"><span class="card-label">가장 최근 추첨 결과</span><span class="split" style="gap:7px"><span class="badge yellow" id="latestVerification">확인 중</span><span class="round-chip" id="latestRound">확인 대기</span></span></div><div><div class="latest-numbers" id="latestBalls"></div><div class="latest-meta"><span id="latestDate">공식 데이터 확인 대기</span><span id="latestBonus">보너스 확인 대기</span></div></div><div class="split"><span class="small-label" id="latestSourceLabel">출처 확인 중</span><button class="text-link" onclick="navigate('history')">회차 확인 →</button></div></div>
+      <div class="latest-card"><div class="card-top"><span class="card-label">가장 최근 추첨 결과</span><span class="split" style="gap:7px"><span class="badge yellow" id="latestVerification">확인 중</span><span class="round-chip" id="latestRound">확인 대기</span></span></div><div><div class="latest-numbers" id="latestBalls"></div><div class="latest-meta"><span id="latestDate">공식 데이터 확인 대기</span><span id="latestBonus">보너스 확인 대기</span></div><div class="latest-financials" aria-label="최신 회차 금액 정보"><div class="financial-metric"><span>판매액</span><strong id="latestSales">자료 확인 중</strong></div><div class="financial-metric"><span>총 당첨금</span><strong id="latestPayout">자료 확인 중</strong></div></div></div><div class="split"><span class="small-label" id="latestSourceLabel">출처 확인 중</span><button class="text-link" onclick="navigate('history')">회차 확인 →</button></div></div>
     </div>
     <div class="grid-3" style="margin-bottom:18px">
       <div class="stat-card"><div class="stat-label">누적 분석 회차</div><div class="stat-value" id="statDrawCount">-</div><div class="stat-foot">데이터 연결 후 자동 집계</div></div>
@@ -200,6 +200,6 @@
 <div class="toast" id="toast"></div>
 <script defer src="/assets/research.js?v=20261122-research-restore-1"></script>
 <script defer src="/assets/research-history.js?v=20261122-import-session-guard-1"></script>
-<script defer src="/assets/app.js?v=20261122-import-session-guard-1"></script>
+<script defer src="/assets/app.js?v=20261123-sales-payout-ui-1"></script>
 </body>
 </html>
