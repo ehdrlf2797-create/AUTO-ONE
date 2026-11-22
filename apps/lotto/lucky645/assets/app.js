@@ -47,6 +47,54 @@ const CLOUD_SYNC_META_KEY = 'lucky645_cloud_sync_meta_v1';
 const RESEARCH_BACKUPS_KEY = 'lucky645_research_backups_v1';
 const MAX_RESEARCH_BACKUPS = 5;
 let cloudSession = loadCloudSession();
+
+const ACCOUNT_SCOPED_KEYS = new Set([
+  SAVED_KEY, SAVED_CHECKS_KEY, AUTO_CHECK_KEY, SIMULATION_HISTORY_KEY,
+  RESEARCH_REPORT_KEY, RESEARCH_HISTORY_KEY, RESEARCH_CANDIDATES_KEY,
+  CLOUD_SYNC_META_KEY
+]);
+const ACCOUNT_SCOPE_SEEN_KEY = 'lucky645_account_scope_seen_v1';
+function accountScopedStorageKey(key, userId=cloudSession?.user?.id||'local') {
+  return ACCOUNT_SCOPED_KEYS.has(key) ? key+'::'+String(userId||'local') : key;
+}
+function activateAccountStorageScope(userId) {
+  if (!userId) return false;
+  let seen=[];
+  try {
+    const parsed=JSON.parse(localStorage.getItem(ACCOUNT_SCOPE_SEEN_KEY)||'[]');
+    if(Array.isArray(parsed))seen=parsed.filter(value=>typeof value==='string');
+  } catch (_) {}
+  if(seen.includes(String(userId))) return false;
+  // Only the first account may adopt legacy anonymous data. Once any account has
+  // been used, a different account starts with its own empty namespace.
+  if(seen.length===0) {
+    for(const key of ACCOUNT_SCOPED_KEYS) {
+      const target=accountScopedStorageKey(key,String(userId));
+      try {
+        if(localStorage.getItem(target)===null) {
+          const legacy=localStorage.getItem(key);
+          if(legacy!==null) localStorage.setItem(target,legacy);
+        }
+        localStorage.removeItem(key);
+      } catch (_) {
+        // Keep the legacy value if the scoped copy cannot be written.
+      }
+    }
+  }
+  seen.push(String(userId));
+  try { localStorage.setItem(ACCOUNT_SCOPE_SEEN_KEY,JSON.stringify([...new Set(seen)])); } catch (_) {}
+  return true;
+}
+function appStorageGet(key) {
+  return appStorageGet(accountScopedStorageKey(key));
+}
+function appStorageSet(key,value) {
+  return appStorageSet(accountScopedStorageKey(key),value);
+}
+function appStorageRemove(key) {
+  return appStorageRemove(accountScopedStorageKey(key));
+}
+activateAccountStorageScope(cloudSession?.user?.id);
 let cloudSessionGeneration = 0;
 let cloudApplying = false;
 let cloudSyncTimer = null;
@@ -123,14 +171,14 @@ function normalizeSimulationProfile(item,index=0) {
 
 function loadSimulationProfiles() {
   try {
-    const raw=JSON.parse(localStorage.getItem(SIMULATION_HISTORY_KEY)||'[]');
+    const raw=JSON.parse(appStorageGet(SIMULATION_HISTORY_KEY)||'[]');
     return Array.isArray(raw)?raw.map(normalizeSimulationProfile).filter(Boolean).slice(0,MAX_SIMULATION_HISTORY):[];
   } catch (_) { return []; }
 }
 
 function persistSimulationProfiles(nextProfiles) {
   try {
-    localStorage.setItem(SIMULATION_HISTORY_KEY,JSON.stringify(nextProfiles.slice(0,MAX_SIMULATION_HISTORY)));
+    appStorageSet(SIMULATION_HISTORY_KEY,JSON.stringify(nextProfiles.slice(0,MAX_SIMULATION_HISTORY)));
     simulationProfiles=nextProfiles.slice(0,MAX_SIMULATION_HISTORY);
     return true;
   } catch (_) {
@@ -156,7 +204,7 @@ function normalizeSavedEntry(entry, index = 0) {
 
 function loadSaved() {
   try {
-    const value = JSON.parse(localStorage.getItem(SAVED_KEY) || '[]');
+    const value = JSON.parse(appStorageGet(SAVED_KEY) || '[]');
     if (!Array.isArray(value)) return [];
     return value.map(normalizeSavedEntry).filter(Boolean);
   } catch (_) { return []; }
@@ -184,12 +232,12 @@ function normalizeSavedCheckRecord(item) {
 }
 
 function loadSavedCheckHistory() {
-  try { const raw = JSON.parse(localStorage.getItem(SAVED_CHECKS_KEY) || '[]'); return Array.isArray(raw) ? raw.map(normalizeSavedCheckRecord).filter(Boolean).slice(-50000) : []; }
+  try { const raw = JSON.parse(appStorageGet(SAVED_CHECKS_KEY) || '[]'); return Array.isArray(raw) ? raw.map(normalizeSavedCheckRecord).filter(Boolean).slice(-50000) : []; }
   catch (_) { return []; }
 }
 
 function loadAutoCheckMeta() {
-  try { const raw = JSON.parse(localStorage.getItem(AUTO_CHECK_KEY) || '{}'); return {
+  try { const raw = JSON.parse(appStorageGet(AUTO_CHECK_KEY) || '{}'); return {
     lastRound: Number.isInteger(Number(raw.lastRound)) && Number(raw.lastRound) > 0 ? Number(raw.lastRound) : 0,
     lastCheckedAt: typeof raw.lastCheckedAt === 'string' ? raw.lastCheckedAt : '',
     lastStatus: typeof raw.lastStatus === 'string' ? raw.lastStatus.slice(0,40) : '대기'
@@ -198,7 +246,7 @@ function loadAutoCheckMeta() {
 
 function persistSavedCheckHistory() {
   try {
-    localStorage.setItem(SAVED_CHECKS_KEY, JSON.stringify(savedCheckHistory.slice(-50000)));
+    appStorageSet(SAVED_CHECKS_KEY, JSON.stringify(savedCheckHistory.slice(-50000)));
     if (!cloudApplying) scheduleCloudSync();
     return true;
   } catch (_) {
@@ -207,7 +255,7 @@ function persistSavedCheckHistory() {
   }
 }
 function persistAutoCheckMeta() {
-  try { localStorage.setItem(AUTO_CHECK_KEY, JSON.stringify(autoCheckMeta)); if (!cloudApplying) scheduleCloudSync(); return true; }
+  try { appStorageSet(AUTO_CHECK_KEY, JSON.stringify(autoCheckMeta)); if (!cloudApplying) scheduleCloudSync(); return true; }
   catch (_) { toast('자동 확인 기준을 저장하지 못했습니다. 브라우저 저장 공간을 확인해 주세요.'); return false; }
 }
 
@@ -518,7 +566,7 @@ function runSavedBacktest() {
 }
 function loadSyncMeta() {
   try {
-    const value = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}');
+    const value = JSON.parse(appStorageGet(SYNC_KEY) || '{}');
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     return {
       lastAttemptAt: typeof value.lastAttemptAt === 'string' ? value.lastAttemptAt : '',
@@ -531,7 +579,7 @@ function loadSyncMeta() {
 }
 
 function persistSyncMeta() {
-  try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncMeta)); } catch (_) {}
+  try { appStorageSet(SYNC_KEY, JSON.stringify(syncMeta)); } catch (_) {}
 }
 
 function formatSyncTime(value) {
@@ -542,7 +590,7 @@ function formatSyncTime(value) {
 
 function loadCachedDraws() {
   try {
-    const value = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]');
+    const value = JSON.parse(appStorageGet(CACHE_KEY) || '[]');
     if (!Array.isArray(value)) return [];
     return mergeDraws([], value.map(normalizeDraw).filter(Boolean));
   } catch (_) { return []; }
@@ -551,7 +599,7 @@ function loadCachedDraws() {
 function persistSaved(nextSaved = saved) {
   const next = Array.isArray(nextSaved) ? nextSaved : saved;
   try {
-    localStorage.setItem(SAVED_KEY, JSON.stringify(next));
+    appStorageSet(SAVED_KEY, JSON.stringify(next));
   } catch (_) {
     toast('번호 보관함 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.');
     return false;
@@ -565,7 +613,7 @@ function persistSaved(nextSaved = saved) {
 }
 
 function persistDraws() {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify(draws)); } catch (_) {}
+  try { appStorageSet(CACHE_KEY, JSON.stringify(draws)); } catch (_) {}
 }
 
 function toast(message) {
@@ -954,14 +1002,14 @@ function renderLatest() {
 
 function loadResearchReport() {
   try {
-    const value = JSON.parse(localStorage.getItem(RESEARCH_REPORT_KEY) || 'null');
+    const value = JSON.parse(appStorageGet(RESEARCH_REPORT_KEY) || 'null');
     return value && value.version >= 1 && Array.isArray(value.evaluation?.strategies) ? value : null;
   } catch (_) { return null; }
 }
 
 function loadResearchHistory(currentReport) {
   try {
-    const parsed = JSON.parse(localStorage.getItem(RESEARCH_HISTORY_KEY) || '[]');
+    const parsed = JSON.parse(appStorageGet(RESEARCH_HISTORY_KEY) || '[]');
     return window.Lucky645ResearchHistory.mergeRuns(currentReport ? [currentReport] : [], parsed);
   } catch (_) { return currentReport ? [currentReport] : []; }
 }
@@ -976,21 +1024,21 @@ function recordResearchRun(report) {
 
 function loadResearchCandidates() {
   try {
-    const value = JSON.parse(localStorage.getItem(RESEARCH_CANDIDATES_KEY) || '[]');
+    const value = JSON.parse(appStorageGet(RESEARCH_CANDIDATES_KEY) || '[]');
     return Array.isArray(value) ? value.filter(item => item && typeof item.id === 'string' && typeof item.label === 'string').slice(0,100) : [];
   } catch (_) { return []; }
 }
 
 function persistResearchState() {
   const keys = [RESEARCH_REPORT_KEY, RESEARCH_HISTORY_KEY, RESEARCH_CANDIDATES_KEY];
-  const previous = keys.map(key => localStorage.getItem(key));
+  const previous = keys.map(key => appStorageGet(key));
   try {
-    if (researchReport) localStorage.setItem(RESEARCH_REPORT_KEY, JSON.stringify(researchReport));
-    localStorage.setItem(RESEARCH_HISTORY_KEY, JSON.stringify(researchHistory.slice(0, MAX_RESEARCH_HISTORY)));
-    localStorage.setItem(RESEARCH_CANDIDATES_KEY, JSON.stringify(researchCandidates));
+    if (researchReport) appStorageSet(RESEARCH_REPORT_KEY, JSON.stringify(researchReport));
+    appStorageSet(RESEARCH_HISTORY_KEY, JSON.stringify(researchHistory.slice(0, MAX_RESEARCH_HISTORY)));
+    appStorageSet(RESEARCH_CANDIDATES_KEY, JSON.stringify(researchCandidates));
     return true;
   } catch (_) {
-    keys.forEach((key,index) => { try { if (previous[index] === null) localStorage.removeItem(key); else localStorage.setItem(key, previous[index]); } catch (_) {} });
+    keys.forEach((key,index) => { try { if (previous[index] === null) appStorageRemove(key); else appStorageSet(key, previous[index]); } catch (_) {} });
     toast('연구 결과 저장 공간이 부족합니다. 기존 연구 이력은 유지했습니다.');
     return false;
   }
@@ -2731,7 +2779,7 @@ async function checkManualNumbers() {
 
 function loadCloudSyncMeta() {
   try {
-    const value=JSON.parse(localStorage.getItem(CLOUD_SYNC_META_KEY)||'{}');
+    const value=JSON.parse(appStorageGet(CLOUD_SYNC_META_KEY)||'{}');
     return {userId:String(value.userId||''),lastSuccessAt:normalizeSyncTimestamp(value.lastSuccessAt),
       uploaded:Number.isSafeInteger(value.uploaded)&&value.uploaded>=0?value.uploaded:0,
       downloaded:Number.isSafeInteger(value.downloaded)&&value.downloaded>=0?value.downloaded:0,
@@ -2740,7 +2788,7 @@ function loadCloudSyncMeta() {
   } catch (_) { return {userId:'',lastSuccessAt:'',uploaded:0,downloaded:0,status:'idle',error:''}; }
 }
 function persistCloudSyncMeta() {
-  try { localStorage.setItem(CLOUD_SYNC_META_KEY,JSON.stringify(cloudSyncMeta)); } catch (_) {}
+  try { appStorageSet(CLOUD_SYNC_META_KEY,JSON.stringify(cloudSyncMeta)); } catch (_) {}
   renderCloudSyncStatus();
 }
 function renderCloudSyncStatus() {
@@ -2760,7 +2808,7 @@ function renderCloudSyncStatus() {
 }
 function loadResearchBackups() {
   try {
-    const rows=JSON.parse(localStorage.getItem(RESEARCH_BACKUPS_KEY)||'[]');
+    const rows=JSON.parse(appStorageGet(RESEARCH_BACKUPS_KEY)||'[]');
     const owner=cloudSession?.user?.id||'local';
     return Array.isArray(rows)?rows.filter(item=>item&&String(item.userId||'local')===owner&&typeof item.createdAt==='string'&&Array.isArray(item.runs)).slice(0,MAX_RESEARCH_BACKUPS):[];
   } catch (_) { return []; }
@@ -2769,7 +2817,7 @@ function persistResearchBackups() {
   try {
     const owner=cloudSession?.user?.id||'local';
     let stored=[];
-    try { const parsed=JSON.parse(localStorage.getItem(RESEARCH_BACKUPS_KEY)||'[]'); if(Array.isArray(parsed))stored=parsed; } catch (_) {}
+    try { const parsed=JSON.parse(appStorageGet(RESEARCH_BACKUPS_KEY)||'[]'); if(Array.isArray(parsed))stored=parsed; } catch (_) {}
     const otherAccounts=stored.filter(item=>item&&String(item.userId||'local')!==owner);
     const currentAccount=researchBackups.map(item=>({...item,userId:owner}));
     const combined=[...currentAccount,...otherAccounts],counts=new Map(),kept=[];
@@ -2778,7 +2826,7 @@ function persistResearchBackups() {
       if(count>=MAX_RESEARCH_BACKUPS)continue;
       counts.set(account,count+1);kept.push(item);
     }
-    localStorage.setItem(RESEARCH_BACKUPS_KEY,JSON.stringify(kept));
+    appStorageSet(RESEARCH_BACKUPS_KEY,JSON.stringify(kept));
     return true;
   } catch (_) { return false; }
 }
@@ -2818,18 +2866,40 @@ function restoreLatestResearchBackup() {
 }
 
 function loadCloudSession() {
-  try { return JSON.parse(localStorage.getItem(CLOUD_SESSION_KEY) || 'null'); } catch (_) { return null; }
+  try { return JSON.parse(appStorageGet(CLOUD_SESSION_KEY) || 'null'); } catch (_) { return null; }
 }
+function reloadAccountScopedState() {
+  saved=loadSaved();
+  savedCheckHistory=loadSavedCheckHistory();
+  autoCheckMeta=loadAutoCheckMeta();
+  simulationProfiles=loadSimulationProfiles();
+  researchReport=loadResearchReport();
+  researchHistory=loadResearchHistory(researchReport);
+  researchCandidates=loadResearchCandidates();
+  researchCompareRunId=researchHistory[1]?(researchHistory[1].runId||researchHistory[1].createdAt):'';
+  syncMeta=loadSyncMeta();
+  cloudSyncMeta=loadCloudSyncMeta();
+  researchBackups=loadResearchBackups();
+  renderSaved();
+  renderSavedReports();
+  renderSimulationPage();
+  renderResearchLab();
+  renderCloudSyncStatus();
+  updateTopStats();
+}
+
 function saveCloudSession(session) {
   const previousUserId=cloudSession?.user?.id||'';
   const nextUserId=session?.user?.id||'';
+  if(previousUserId!==nextUserId&&nextUserId)activateAccountStorageScope(nextUserId);
   if(previousUserId!==nextUserId){
     cloudSessionGeneration++;
     clearTimeout(cloudSyncTimer);
     if(cloudSyncPromise)cloudSyncRequested=Boolean(nextUserId);
   }
   cloudSession = session || null;
-  try { if (cloudSession) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(cloudSession)); else localStorage.removeItem(CLOUD_SESSION_KEY); } catch (_) {}
+  try { if (cloudSession) appStorageSet(CLOUD_SESSION_KEY, JSON.stringify(cloudSession)); else appStorageRemove(CLOUD_SESSION_KEY); } catch (_) {}
+  if(previousUserId!==nextUserId)reloadAccountScopedState();
   researchBackups=loadResearchBackups();
   renderCloudAuth();
   if(previousUserId!==nextUserId&&nextUserId&&!cloudSyncPromise)scheduleCloudSync();
@@ -2839,10 +2909,10 @@ function cloudTombstonesStorageKey() {
   return userId ? CLOUD_TOMBSTONES_KEY+':'+userId : CLOUD_TOMBSTONES_KEY+':local';
 }
 function loadCloudTombstones() {
-  try { const rows=JSON.parse(localStorage.getItem(cloudTombstonesStorageKey())||'[]'); return Array.isArray(rows)?rows:[]; } catch (_) { return []; }
+  try { const rows=JSON.parse(appStorageGet(cloudTombstonesStorageKey())||'[]'); return Array.isArray(rows)?rows:[]; } catch (_) { return []; }
 }
 function persistCloudTombstones(rows) {
-  try { localStorage.setItem(cloudTombstonesStorageKey(), JSON.stringify(rows.slice(-50000))); } catch (_) {}
+  try { appStorageSet(cloudTombstonesStorageKey(), JSON.stringify(rows.slice(-50000))); } catch (_) {}
 }
 function markCloudDeleted(category, recordKey, metadata = null) {
   const rows=loadCloudTombstones(), key=String(recordKey);
@@ -2933,7 +3003,7 @@ async function cloudAccessToken() {
       // 다른 동기화 요청이나 브라우저 탭이 먼저 토큰을 회전했을 수 있습니다.
       // 실패한 요청의 오래된 토큰이 현재 세션과 다르면 새 세션을 지우지 않습니다.
       let storedSession=null;
-      try { storedSession=JSON.parse(localStorage.getItem(CLOUD_SESSION_KEY)||'null'); } catch (_) {}
+      try { storedSession=JSON.parse(appStorageGet(CLOUD_SESSION_KEY)||'null'); } catch (_) {}
       const currentSession=cloudSession?.refresh_token!==attemptedRefreshToken
         ? cloudSession
         : storedSession?.refresh_token!==attemptedRefreshToken ? storedSession : null;
@@ -3180,9 +3250,9 @@ async function performCloudSync() {
   persistCloudTombstones([...tombstoneMap.values()]);
   cloudApplying=true;
   try{
-    localStorage.setItem(SAVED_KEY,JSON.stringify(saved));
-    localStorage.setItem(SAVED_CHECKS_KEY,JSON.stringify(savedCheckHistory));
-    localStorage.setItem(AUTO_CHECK_KEY,JSON.stringify(autoCheckMeta));
+    appStorageSet(SAVED_KEY,JSON.stringify(saved));
+    appStorageSet(SAVED_CHECKS_KEY,JSON.stringify(savedCheckHistory));
+    appStorageSet(AUTO_CHECK_KEY,JSON.stringify(autoCheckMeta));
     renderSaved();renderSavedReports();updateTopStats();
   }finally{cloudApplying=false;}
 
