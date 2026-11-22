@@ -47,6 +47,7 @@ const CLOUD_SYNC_META_KEY = 'lucky645_cloud_sync_meta_v1';
 const RESEARCH_BACKUPS_KEY = 'lucky645_research_backups_v1';
 const MAX_RESEARCH_BACKUPS = 5;
 let cloudSession = loadCloudSession();
+let cloudSessionGeneration = 0;
 let cloudApplying = false;
 let cloudSyncTimer = null;
 let cloudSyncPromise = null;
@@ -1294,9 +1295,11 @@ async function fetchAllResearchRuns(token) {
   throw new Error('연구 이력이 20만 건을 초과했습니다. JSON 백업으로 보관한 뒤 고객지원에 문의해 주세요.');
 }
 
-async function syncResearchRuns(token) {
-  if (!cloudSession?.user?.id || !token) return { uploaded: 0, downloaded: 0 };
+async function syncResearchRuns(token, expectedUserId=cloudSession?.user?.id, expectedGeneration=cloudSessionGeneration) {
+  if (!expectedUserId || !token) return { uploaded: 0, downloaded: 0 };
+  assertCloudSyncSession(expectedUserId,expectedGeneration);
   const remote = await fetchAllResearchRuns(token);
+  assertCloudSyncSession(expectedUserId,expectedGeneration);
   if (!Array.isArray(remote)) throw new Error('클라우드 연구 이력 응답 형식이 올바르지 않습니다.');
   const remoteReports = remote.map(row => {
     const report = window.Lucky645ResearchHistory.normalizeReport(row.report);
@@ -1307,11 +1310,13 @@ async function syncResearchRuns(token) {
   const remoteIds = new Set(remoteReports.map(item => item.runId));
   const upload = window.Lucky645ResearchHistory.selectRunsToUpload(researchHistory, remoteReports);
   if (upload.length) {
-    const rows = upload.map(report => ({ user_id: cloudSession.user.id, run_id: report.runId || report.createdAt, report, created_at: report.createdAt, updated_at: new Date().toISOString() }));
+    const rows = upload.map(report => ({ user_id: expectedUserId, run_id: report.runId || report.createdAt, report, created_at: report.createdAt, updated_at: new Date().toISOString() }));
+    assertCloudSyncSession(expectedUserId,expectedGeneration);
     await cloudRequest('/rest/v1/lucky645_research_runs?on_conflict=user_id,run_id', {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(rows)
     }, token);
   }
+  assertCloudSyncSession(expectedUserId,expectedGeneration);
   researchHistory = merged;
   if (merged.length && (!researchReport || Date.parse(merged[0].createdAt) > Date.parse(researchReport.createdAt))) researchReport = merged[0];
   if (!persistResearchState()) throw new Error('클라우드 연구 이력은 읽었지만 이 기기의 저장 공간에 반영하지 못했습니다.');
@@ -2816,10 +2821,18 @@ function loadCloudSession() {
   try { return JSON.parse(localStorage.getItem(CLOUD_SESSION_KEY) || 'null'); } catch (_) { return null; }
 }
 function saveCloudSession(session) {
+  const previousUserId=cloudSession?.user?.id||'';
+  const nextUserId=session?.user?.id||'';
+  if(previousUserId!==nextUserId){
+    cloudSessionGeneration++;
+    clearTimeout(cloudSyncTimer);
+    if(cloudSyncPromise)cloudSyncRequested=Boolean(nextUserId);
+  }
   cloudSession = session || null;
   try { if (cloudSession) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(cloudSession)); else localStorage.removeItem(CLOUD_SESSION_KEY); } catch (_) {}
   researchBackups=loadResearchBackups();
   renderCloudAuth();
+  if(previousUserId!==nextUserId&&nextUserId&&!cloudSyncPromise)scheduleCloudSync();
 }
 function cloudTombstonesStorageKey() {
   const userId=cloudSession?.user?.id;
@@ -3055,14 +3068,16 @@ async function fetchAllCloudRows(token) {
   throw new Error('클라우드 데이터가 한 번에 처리할 수 있는 최대 행 수를 초과했습니다. 고객지원에 문의해 주세요.');
 }
 
-async function cloudUpsert(rows, token) {
+async function cloudUpsert(rows, token, expectedUserId=cloudSession?.user?.id, expectedGeneration=cloudSessionGeneration) {
   if(!rows.length)return;
+  assertCloudSyncSession(expectedUserId,expectedGeneration);
   const batchSize=250;
   const base='/rest/v1/lucky645_sync_records?on_conflict=user_id,category,record_key';
   for(let index=0;index<rows.length;index+=batchSize) {
+    assertCloudSyncSession(expectedUserId,expectedGeneration);
     const batch=rows.slice(index,index+batchSize);
     const payload=batch.map(row=>({
-      user_id:cloudSession.user.id,
+      user_id:expectedUserId,
       category:row.category,
       record_key:row.record_key,
       payload:row.payload||{},
@@ -3070,17 +3085,26 @@ async function cloudUpsert(rows, token) {
       updated_at:new Date().toISOString()
     }));
     await cloudRequest(base,{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)},token);
+    assertCloudSyncSession(expectedUserId,expectedGeneration);
   }
+}
+function assertCloudSyncSession(expectedUserId,expectedGeneration=cloudSessionGeneration) {
+  if(!expectedUserId||cloudSessionGeneration!==expectedGeneration||cloudSession?.user?.id!==expectedUserId)
+    throw new Error('로그인 계정이 변경되어 동기화를 중단했습니다. 현재 계정으로 다시 동기화해 주세요.');
 }
 async function performCloudSync() {
   if(!cloudSession?.user?.id) return;
+  const syncUserId=cloudSession.user.id;
+  const syncGeneration=cloudSessionGeneration;
   const message=$('cloudMessage');
   cloudSyncMeta={...cloudSyncMeta,userId:cloudSession.user.id,status:'running',error:''};
   persistCloudSyncMeta();
   if(message)message.textContent='클라우드 데이터를 안전하게 병합하는 중입니다…';
   const token=await cloudAccessToken();
   if(!token)throw new Error('로그인 세션이 만료됐습니다. 다시 로그인해 주세요.');
+  assertCloudSyncSession(syncUserId,syncGeneration);
   const remote=await fetchAllCloudRows(token);
+  assertCloudSyncSession(syncUserId,syncGeneration);
   const tombstoneMap=new Map(loadCloudTombstones().map(row=>[row.category+':'+row.record_key,row]));
   (remote||[]).filter(row=>row.deleted_at).forEach(row=>tombstoneMap.set(row.category+':'+row.record_key,{
     category:row.category,
@@ -3167,6 +3191,7 @@ async function performCloudSync() {
 
   const finalDeleted=new Set([...tombstoneMap.keys()]);
   const finalDeletedSavedNumbers=deletedSavedNumberMap([...tombstoneMap.values()]);
+  assertCloudSyncSession(syncUserId,syncGeneration);
   const activeRows=buildLocalCloudRows().filter(row=>{
     if(finalDeleted.has(row.category+':'+row.record_key)) return false;
     if(row.category==='saved_combination'&&isSavedCombinationDeleted(row.payload,finalDeletedSavedNumbers)) return false;
@@ -3178,8 +3203,10 @@ async function performCloudSync() {
     payload:row.numbers_key?{numbers_key:row.numbers_key}:{},
     deleted_at:row.deleted_at
   }));
-  await cloudUpsert([...activeRows,...deletedRows],token);
-  const researchSync = await syncResearchRuns(token);
+  await cloudUpsert([...activeRows,...deletedRows],token,syncUserId,syncGeneration);
+  assertCloudSyncSession(syncUserId,syncGeneration);
+  const researchSync = await syncResearchRuns(token,syncUserId,syncGeneration);
+  assertCloudSyncSession(syncUserId,syncGeneration);
   const uploaded=activeRows.length+deletedRows.length+researchSync.uploaded;
   const downloaded=remote.length+researchSync.downloaded;
   cloudSyncMeta={userId:cloudSession.user.id,lastSuccessAt:new Date().toISOString(),uploaded,downloaded,status:'success',error:''};
@@ -3193,12 +3220,15 @@ async function syncCloudData() {
     cloudSyncRequested=true;
     return cloudSyncPromise;
   }
+  const syncUserId=cloudSession.user.id,syncGeneration=cloudSessionGeneration;
   cloudSyncPromise=performCloudSync();
   try {
     return await cloudSyncPromise;
   } catch(error) {
-    cloudSyncMeta={...cloudSyncMeta,userId:cloudSession?.user?.id||'',status:'error',error:error?.message||String(error)};
-    persistCloudSyncMeta();
+    if(cloudSessionGeneration===syncGeneration&&cloudSession?.user?.id===syncUserId){
+      cloudSyncMeta={...cloudSyncMeta,userId:syncUserId,status:'error',error:error?.message||String(error)};
+      persistCloudSyncMeta();
+    }
     throw error;
   } finally {
     cloudSyncPromise=null;
