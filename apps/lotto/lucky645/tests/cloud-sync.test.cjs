@@ -357,7 +357,7 @@ test('cloud sync buckets remote rows in one pass without materializing a duplica
 
 test('cloud reads retry transient service failures with bounded backoff', async () => {
   const start=appSource.indexOf('function cloudHeaders(token) {');
-  const end=appSource.indexOf('\nasync function cloudAuth(',start);
+  const end=appSource.indexOf('async function cloudAuth(',start);
   assert.notEqual(start,-1); assert.notEqual(end,-1);
   let calls=0, delays=[];
   const context={
@@ -377,7 +377,7 @@ test('cloud reads retry transient service failures with bounded backoff', async 
 
 test('cloud requests do not retry authorization or validation failures', async () => {
   const start=appSource.indexOf('function cloudHeaders(token) {');
-  const end=appSource.indexOf('\nasync function cloudAuth(',start);
+  const end=appSource.indexOf('async function cloudAuth(',start);
   let calls=0, delays=0;
   const context={
     SUPABASE_URL:'https://project.supabase.co',SUPABASE_PUBLISHABLE_KEY:'public-key',
@@ -392,7 +392,7 @@ test('cloud requests do not retry authorization or validation failures', async (
 
 test('cloud upsert retries only explicit merge-duplicate PostgREST writes', async () => {
   const start=appSource.indexOf('function cloudHeaders(token) {');
-  const end=appSource.indexOf('\nasync function cloudAuth(',start);
+  const end=appSource.indexOf('async function cloudAuth(',start);
   let calls=0;
   const context={
     SUPABASE_URL:'https://project.supabase.co',SUPABASE_PUBLISHABLE_KEY:'public-key',
