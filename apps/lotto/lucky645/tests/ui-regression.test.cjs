@@ -703,10 +703,14 @@ test('CSV export quotes cells and neutralizes imported spreadsheet formula paylo
 
 
 test('backup import limits reject oversized saved-entry and history arrays before processing', () => {
-  const start = app.indexOf('const MAX_SAVED_BACKUP_ENTRIES');
+  const start = app.indexOf('function validateSavedBackupLimits(');
   const end = app.indexOf('\nfunction normalizeSavedEntry', start);
   assert.ok(start >= 0 && end > start);
-  const context = {formatNumber:value=>Number(value).toLocaleString('ko-KR')};
+  const context = {
+    MAX_SAVED_BACKUP_ENTRIES:10000,
+    MAX_SAVED_BACKUP_CHECK_HISTORY:50000,
+    formatNumber:value=>Number(value).toLocaleString('ko-KR')
+  };
   vm.runInNewContext(
     app.slice(start, end) + '\nthis.validateSavedBackupLimits = validateSavedBackupLimits;',
     context
