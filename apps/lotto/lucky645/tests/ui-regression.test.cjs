@@ -685,7 +685,7 @@ test('CSV export quotes cells and neutralizes imported spreadsheet formula paylo
     ['+SUM(1,1)', "'+SUM(1,1)"],
     ['-1+cmd|/C calc', "'-1+cmd|/C calc"],
     ['@SUM(1,1)', "'@SUM(1,1)"],
-    ['\t=HYPERLINK("https://example.invalid","open")', '\t=HYPERLINK("https://example.invalid","open")'],
+    ['\t=HYPERLINK("https://example.invalid","open")', "'\t=HYPERLINK(\"https://example.invalid\",\"open\")"],
     ['  @SUM(1,1)', "'  @SUM(1,1)"],
     ['ordinary label', 'ordinary label'],
     [-12, '-12']
