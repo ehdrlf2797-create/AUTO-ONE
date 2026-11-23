@@ -442,7 +442,7 @@ function renderSavedReports() {
 function csvCell(value) {
   const text = String(value ?? '');
   // Imported strings must not become executable spreadsheet formulas when a CSV is opened.
-  const formulaLike = typeof value === 'string' && /^[\\s\\uFEFF]*[=+\\-@]/.test(value);
+  const formulaLike = typeof value === 'string' && /^[\s\uFEFF]*[=+\-@]/.test(value);
   const safeText = formulaLike ? "'" + text : text;
   return '"' + safeText.replace(/"/g, '""') + '"';
 }
@@ -451,7 +451,7 @@ function exportSavedCheckHistory() {
   if (!savedCheckHistory.length) return toast('내보낼 당첨 확인 이력이 없습니다.');
   const rows=[['회차','추첨일','저장ID','번호','일치개수','보너스일치','등수','확인시각','확인방식']];
   savedCheckHistory.forEach(row=>rows.push([row.round,row.date,row.savedId,row.numbers.join(' '),row.matches,row.bonusMatch?'Y':'N',row.rank,row.checkedAt,row.source]));
-  const csv='\\uFEFF'+rows.map(row=>row.map(csvCell).join(',')).join('\\r\\n');
+  const csv='\uFEFF'+rows.map(row=>row.map(csvCell).join(',')).join('\r\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); const a=document.createElement('a'); a.href=url; a.download=`lucky645-check-history-${new Date().toISOString().slice(0,10)}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); toast('당첨 확인 이력 CSV를 저장했습니다.');
 }
 
