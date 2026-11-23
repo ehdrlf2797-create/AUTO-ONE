@@ -208,6 +208,15 @@ function validateSavedBackupLimits(savedRows, historyRows) {
   }
 }
 
+function assertSavedCollectionCapacity(savedCount, historyCount) {
+  if (savedCount > MAX_SAVED_ENTRIES) {
+    throw new Error('번호 보관함은 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개까지 저장할 수 있습니다.');
+  }
+  if (historyCount > MAX_SAVED_BACKUP_CHECK_HISTORY) {
+    throw new Error('당첨 확인 이력은 최대 '+formatNumber(MAX_SAVED_BACKUP_CHECK_HISTORY)+'건까지 저장할 수 있습니다.');
+  }
+}
+
 function normalizeSavedEntry(entry, index = 0) {
   if (!entry || typeof entry !== 'object' || !Array.isArray(entry.numbers)) return null;
   const numbers = entry.numbers.length === 6 ? entry.numbers.map(Number) : [];
@@ -2381,11 +2390,9 @@ async function importSavedBackup(file) {
       nextMeta.lastStatus = '백업에서 복원 · 회차 기준 검증 완료';
     }
 
-    if (nextSaved.length > MAX_SAVED_ENTRIES) {
-      throw new Error('복원 후 번호 보관함이 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개를 초과합니다. 기존 데이터를 삭제하지 않고 복원을 취소했습니다.');
-    }
-    assertAccountScope(importOwner,importGeneration);
     const boundedNextHistory = nextHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY);
+    assertSavedCollectionCapacity(nextSaved.length,boundedNextHistory.length);
+    assertAccountScope(importOwner,importGeneration);
     writeStorageTransaction([
       [SAVED_KEY,JSON.stringify(nextSaved)],
       [SAVED_CHECKS_KEY,JSON.stringify(boundedNextHistory)],
@@ -3427,6 +3434,7 @@ async function performCloudSync() {
     }
   }
   const prospectiveHistoryKeys=new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
+  assertSavedCollectionCapacity(prospectiveSavedByNumbers.size,prospectiveHistoryKeys.size);
   for(const row of remoteHistoryRows) {
     const item=normalizeCloudHistoryRecord(row,prospectiveRemoteSavedById,prospectiveSavedByNumbers);
     if(!item)continue;
