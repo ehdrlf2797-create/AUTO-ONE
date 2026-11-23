@@ -51,56 +51,31 @@ const RESEARCH_BACKUPS_KEY = 'lucky645_research_backups_v1';
 const MAX_RESEARCH_BACKUPS = 5;
 let cloudSession = loadCloudSession();
 
-const ACCOUNT_SCOPED_KEYS = new Set([
-  SAVED_KEY, SAVED_CHECKS_KEY, AUTO_CHECK_KEY, SIMULATION_HISTORY_KEY,
-  RESEARCH_REPORT_KEY, RESEARCH_HISTORY_KEY, RESEARCH_CANDIDATES_KEY,
-  CLOUD_SYNC_META_KEY
-]);
 const ACCOUNT_SCOPE_SEEN_KEY = 'lucky645_account_scope_seen_v1';
-function accountScopedStorageKey(key, userId) {
-  if(!ACCOUNT_SCOPED_KEYS.has(key))return key;
-  const owner=userId||cloudSession?.user?.id||'local';
-  return key+'::'+String(owner);
+const accountStorage = window.Lucky645Storage.createAccountStorage({
+  storage: localStorage,
+  scopedKeys: [
+    SAVED_KEY, SAVED_CHECKS_KEY, AUTO_CHECK_KEY, SIMULATION_HISTORY_KEY,
+    RESEARCH_REPORT_KEY, RESEARCH_HISTORY_KEY, RESEARCH_CANDIDATES_KEY,
+    CLOUD_SYNC_META_KEY
+  ],
+  seenKey: ACCOUNT_SCOPE_SEEN_KEY,
+  getCurrentUserId: () => cloudSession?.user?.id
+});
+function accountScopedStorageKey(key,userId) {
+  return accountStorage.key(key,userId);
 }
 function activateAccountStorageScope(userId) {
-  if (!userId) return false;
-  let seen=[];
-  try {
-    const parsed=JSON.parse(localStorage.getItem(ACCOUNT_SCOPE_SEEN_KEY)||'[]');
-    if(Array.isArray(parsed))seen=parsed.filter(value=>typeof value==='string');
-  } catch (_) {}
-  if(seen.includes(String(userId))) return false;
-  // Only the first account may adopt legacy anonymous data. Once any account has
-  // been used, a different account starts with its own empty namespace.
-  if(seen.length===0) {
-    let migrationSucceeded=true;
-    for(const key of ACCOUNT_SCOPED_KEYS) {
-      const target=accountScopedStorageKey(key,String(userId));
-      try {
-        if(localStorage.getItem(target)===null) {
-          const legacy=localStorage.getItem(key);
-          if(legacy!==null) localStorage.setItem(target,legacy);
-        }
-        localStorage.removeItem(key);
-      } catch (_) {
-        migrationSucceeded=false;
-        // Keep the legacy value if the scoped copy cannot be written.
-      }
-    }
-    if(!migrationSucceeded)return false;
-  }
-  seen.push(String(userId));
-  try { localStorage.setItem(ACCOUNT_SCOPE_SEEN_KEY,JSON.stringify([...new Set(seen)])); } catch (_) {}
-  return true;
+  return accountStorage.activate(userId);
 }
 function appStorageGet(key) {
-  return localStorage.getItem(accountScopedStorageKey(key));
+  return accountStorage.get(key);
 }
 function appStorageSet(key,value) {
-  return localStorage.setItem(accountScopedStorageKey(key),value);
+  return accountStorage.set(key,value);
 }
 function appStorageRemove(key) {
-  return localStorage.removeItem(accountScopedStorageKey(key));
+  return accountStorage.remove(key);
 }
 activateAccountStorageScope(cloudSession?.user?.id);
 let cloudSessionGeneration = 0;

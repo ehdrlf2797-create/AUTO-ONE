@@ -11,6 +11,7 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'assets/app.css'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
 const exportUtilsSource = fs.readFileSync(path.join(root, 'assets/export-utils.js'), 'utf8');
+const storageScopeSource = fs.readFileSync(path.join(root, 'assets/storage-scope.js'), 'utf8');
 const researchHistorySource = fs.readFileSync(path.join(root, 'assets/research-history.js'), 'utf8');
 
 test('frontend draw normalization preserves official sales and payout without trusting third-party totalSales', () => {
@@ -471,39 +472,74 @@ test('account-owned browser records use isolated namespaces and migrate legacy d
 });
 
 
-test('account storage scopes isolate users and migrate legacy records only once', () => {
-  const start=app.indexOf('const ACCOUNT_SCOPED_KEYS = new Set([');
-  const end=app.indexOf('activateAccountStorageScope(cloudSession?.user?.id);',start);
-  assert.ok(start>=0 && end>start);
-  const storage=new Map([['lucky645_saved','legacy-ticket-data']]);
-  const localStorage={
+test('account storage module migrates legacy data once and isolates accounts', () => {
+  const storage = new Map([
+    ['lucky645_saved','legacy-ticket-data'],
+    ['lucky645_simulation_history_v1','legacy-sim-data']
+  ]);
+  const localStorage = {
     getItem:key=>storage.has(key)?storage.get(key):null,
     setItem:(key,value)=>storage.set(key,String(value)),
     removeItem:key=>storage.delete(key)
   };
-  const context={
-    localStorage,cloudSession:null,
-    SAVED_KEY:'lucky645_saved',SAVED_CHECKS_KEY:'lucky645_saved_check_history_v1',
-    AUTO_CHECK_KEY:'lucky645_auto_check_meta_v1',SIMULATION_HISTORY_KEY:'lucky645_simulation_history_v1',
-    RESEARCH_REPORT_KEY:'lucky645_research_report_v1',RESEARCH_HISTORY_KEY:'lucky645_research_history_v1',
-    RESEARCH_CANDIDATES_KEY:'lucky645_research_candidates_v1',CLOUD_SYNC_META_KEY:'lucky645_cloud_sync_meta_v1'
+  let activeUser = null;
+  const context = {window:{}};
+  vm.runInNewContext(storageScopeSource, context);
+  const scope = context.window.Lucky645Storage.createAccountStorage({
+    storage:localStorage,
+    scopedKeys:['lucky645_saved','lucky645_simulation_history_v1'],
+    seenKey:'lucky645_account_scope_seen_v1',
+    getCurrentUserId:()=>activeUser
+  });
+
+  assert.equal(scope.activate('account-A'),true);
+  assert.equal(storage.get('lucky645_saved::account-A'),'legacy-ticket-data');
+  assert.equal(storage.get('lucky645_simulation_history_v1::account-A'),'legacy-sim-data');
+  assert.equal(storage.has('lucky645_saved'),false);
+
+  activeUser='account-A';
+  scope.set('lucky645_saved','account-A-ticket');
+  assert.equal(scope.get('lucky645_saved'),'account-A-ticket');
+  assert.equal(scope.activate('account-B'),true);
+  activeUser='account-B';
+  assert.equal(scope.get('lucky645_saved'),null);
+  scope.set('lucky645_saved','account-B-ticket');
+  activeUser=null;
+  assert.equal(scope.get('lucky645_saved'),null);
+  activeUser='account-A';
+  assert.equal(scope.get('lucky645_saved'),'account-A-ticket');
+  activeUser='account-B';
+  assert.equal(scope.get('lucky645_saved'),'account-B-ticket');
+  assert.equal(scope.key('unscoped'),'unscoped');
+});
+
+test('account storage migration failure preserves legacy data and does not mark the account as initialized', () => {
+  const storage = new Map([['lucky645_saved','legacy-ticket-data']]);
+  let failScopedWrite = true;
+  const localStorage = {
+    getItem:key=>storage.has(key)?storage.get(key):null,
+    setItem(key,value) {
+      if (failScopedWrite && key === 'lucky645_saved::account-A') throw new Error('quota exceeded');
+      storage.set(key,String(value));
+    },
+    removeItem:key=>storage.delete(key)
   };
-  vm.runInNewContext(app.slice(start,end),context);
-  context.activateAccountStorageScope('account-A');
+  const context={window:{}};
+  vm.runInNewContext(storageScopeSource,context);
+  const scope=context.window.Lucky645Storage.createAccountStorage({
+    storage:localStorage,
+    scopedKeys:['lucky645_saved'],
+    seenKey:'seen',
+    getCurrentUserId:()=>null
+  });
+
+  assert.equal(scope.activate('account-A'),false);
+  assert.equal(storage.get('lucky645_saved'),'legacy-ticket-data');
+  assert.equal(storage.has('seen'),false);
+  failScopedWrite=false;
+  assert.equal(scope.activate('account-A'),true);
   assert.equal(storage.get('lucky645_saved::account-A'),'legacy-ticket-data');
   assert.equal(storage.has('lucky645_saved'),false);
-  context.cloudSession={user:{id:'account-A'}};
-  context.appStorageSet(context.SAVED_KEY,'account-A-ticket');
-  context.activateAccountStorageScope('account-B');
-  context.cloudSession={user:{id:'account-B'}};
-  assert.equal(context.appStorageGet(context.SAVED_KEY),null);
-  context.appStorageSet(context.SAVED_KEY,'account-B-ticket');
-  context.cloudSession=null;
-  assert.equal(context.appStorageGet(context.SAVED_KEY),null);
-  context.cloudSession={user:{id:'account-A'}};
-  assert.equal(context.appStorageGet(context.SAVED_KEY),'account-A-ticket');
-  context.cloudSession={user:{id:'account-B'}};
-  assert.equal(context.appStorageGet(context.SAVED_KEY),'account-B-ticket');
 });
 
 
