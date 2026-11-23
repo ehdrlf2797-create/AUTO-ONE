@@ -2286,12 +2286,17 @@ function writeStorageTransaction(entries) {
     throw new Error('저장 작업 형식이 올바르지 않습니다.');
   }
   const previous = entries.map(([key]) => appStorageGet(key));
+  const written = [];
   try {
-    entries.forEach(([key,value]) => appStorageSet(key,value));
+    for (const [key,value] of entries) {
+      appStorageSet(key,value);
+      written.push(key);
+    }
     return true;
   } catch (error) {
     let rollbackFailed = false;
-    entries.forEach(([key], index) => {
+    written.forEach(key => {
+      const index = entries.findIndex(entry => entry[0] === key);
       try {
         if (previous[index] === null) appStorageRemove(key);
         else appStorageSet(key, previous[index]);
@@ -2373,13 +2378,14 @@ async function importSavedBackup(file) {
     }
 
     assertAccountScope(importOwner,importGeneration);
+    const boundedNextHistory = nextHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY);
     writeStorageTransaction([
       [SAVED_KEY,JSON.stringify(nextSaved)],
-      [SAVED_CHECKS_KEY,JSON.stringify(nextHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY))],
+      [SAVED_CHECKS_KEY,JSON.stringify(boundedNextHistory)],
       [AUTO_CHECK_KEY,JSON.stringify(nextMeta)]
     ]);
     saved = nextSaved;
-    savedCheckHistory = nextHistory;
+    savedCheckHistory = boundedNextHistory;
     autoCheckMeta = nextMeta;
     if (!cloudApplying) scheduleCloudSync();
     renderSaved();
