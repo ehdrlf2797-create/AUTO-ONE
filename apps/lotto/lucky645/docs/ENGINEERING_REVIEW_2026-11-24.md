@@ -81,3 +81,15 @@ Files:
 ## Current verification gap
 
 The duplicate-rank fix has been committed to the existing feature branch. CI and Preview checks for the newest commit must complete before this review can be called validated. The authenticated visual check is still outstanding.
+
+### Late refresh-token response after account switch
+
+A second race was found in the browser auth flow: if account A's refresh-token request completed after the user had switched to account B, the late successful response could call `saveCloudSession` and restore account A. This was not prevented by the cloud-sync generation guard because the stale response changed the session before the sync guard rejected the operation.
+
+**Change:** capture the initiating user ID and session generation before refreshing. Before applying a successful response, reject it if the account/session generation changed; if another tab rotated the token for the same account, retain the newer current session instead of overwriting it. Also reject a mismatched user ID returned by the refresh endpoint.
+
+**Regression test:** hold account A's refresh response, switch to account B, then resolve A's response and assert B remains signed in.
+
+Files:
+- `assets/app.js`
+- `tests/ui-regression.test.cjs`
