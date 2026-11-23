@@ -2315,7 +2315,7 @@ async function importSavedBackup(file) {
   if (!file) return;
   const importOwner=cloudSession?.user?.id||'local';
   const importGeneration=cloudSessionGeneration;
-  if (file.size > MAX_BACKUP_FILE_SIZE) return toast(\`백업 파일은 \${(MAX_BACKUP_FILE_SIZE / 1024 / 1024).toFixed(0)}MB 이하만 불러올 수 있습니다.\`);
+  if (file.size > MAX_BACKUP_FILE_SIZE) return toast(`백업 파일은 ${(MAX_BACKUP_FILE_SIZE / 1024 / 1024).toFixed(0)}MB 이하만 불러올 수 있습니다.`);
   try {
     const fileText=await file.text();
     assertAccountScope(importOwner,importGeneration);
@@ -2337,7 +2337,7 @@ async function importSavedBackup(file) {
       const key = entry.numbers.join('-');
       let local = localByNumbers.get(key);
       if (!local) {
-        local = {...entry,id:\`import-\${Date.now()}-\${added}\`,syncUpdatedAt:entry.syncUpdatedAt || new Date().toISOString()};
+        local = {...entry,id:`import-${Date.now()}-${added}`,syncUpdatedAt:entry.syncUpdatedAt || new Date().toISOString()};
         nextSaved.push(local); localByNumbers.set(key,local); added++;
       } else {
         const wasFavorite = local.favorite;
@@ -2351,13 +2351,13 @@ async function importSavedBackup(file) {
     });
 
     const importedHistory = importedHistoryRows.map(normalizeSavedCheckRecord).filter(Boolean);
-    const historyKeys = new Set(nextHistory.map(row=>\`\${Number(row.round)}:\${String(row.savedId || row.id)}\`));
+    const historyKeys = new Set(nextHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
     let historyAdded = 0;
     importedHistory.forEach(row=>{
       const local = localByNumbers.get(row.numbers.join('-'));
       if (local) row.savedId = local.id;
       else if (importedIdMap.has(row.savedId)) row.savedId = importedIdMap.get(row.savedId);
-      const key=\`\${Number(row.round)}:\${String(row.savedId || row.id)}\`;
+      const key=`${Number(row.round)}:${String(row.savedId || row.id)}`;
       if(!historyKeys.has(key)){
         row.id = key;
         nextHistory.push(row); historyKeys.add(key); historyAdded++;
@@ -2392,8 +2392,8 @@ async function importSavedBackup(file) {
     updateTopStats();
     renderSavedReports();
     if (savedBacktestResult) runSavedBacktest();
-    toast(\`\${added}개 조합과 \${historyAdded}개 확인 이력을 가져왔습니다.\`);
-  } catch (error) { toast(\`백업 파일을 읽지 못했습니다: \${error.message}\`); }
+    toast(`${added}개 조합과 ${historyAdded}개 확인 이력을 가져왔습니다.`);
+  } catch (error) { toast(`백업 파일을 읽지 못했습니다: ${error.message}`); }
 }
 
 
