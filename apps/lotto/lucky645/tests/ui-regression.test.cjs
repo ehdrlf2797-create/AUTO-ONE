@@ -635,3 +635,39 @@ test('refresh failure reports the error and releases the retry control', async (
   assert.equal(context.isRefreshing, false);
   assert.equal(refreshButton.disabled, false);
 });
+
+
+test('a late refresh-token response cannot restore the previous account after account switching', async () => {
+  const start = app.indexOf('async function cloudAccessToken()');
+  const end = app.indexOf('\nfunction renderCloudAuth(', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+
+  let resolveRefresh;
+  const refreshResponse = new Promise(resolve => { resolveRefresh = resolve; });
+  const context = {
+    cloudSession:{user:{id:'account-A'},access_token:'expired-A',refresh_token:'refresh-A',expires_at:1},
+    cloudSessionGeneration:0,
+    cloudAuth:() => refreshResponse,
+    saveCloudSession(session) {
+      const previousId=this.cloudSession?.user?.id||'';
+      const nextId=session?.user?.id||'';
+      if(previousId!==nextId)this.cloudSessionGeneration++;
+      this.cloudSession=session;
+    },
+    appStorageGet:() => null,
+    renderCloudAuth(){}
+  };
+  vm.createContext(context);
+  vm.runInContext(app.slice(start,end)+'\nthis.refreshAccessToken = cloudAccessToken;',context);
+
+  const pending = context.refreshAccessToken();
+  context.cloudSession={user:{id:'account-B'},access_token:'access-B',refresh_token:'refresh-B',expires_at:9999999999};
+  context.cloudSessionGeneration++;
+  resolveRefresh({user:{id:'account-A'},access_token:'access-A-new',refresh_token:'refresh-A-new',expires_in:3600});
+
+  await assert.rejects(pending,/계정이 변경되어 이전 로그인 세션 갱신을 취소했습니다/);
+  assert.equal(context.cloudSession.user.id,'account-B');
+  assert.equal(context.cloudSession.access_token,'access-B');
+  assert.equal(context.cloudSessionGeneration,1);
+});
