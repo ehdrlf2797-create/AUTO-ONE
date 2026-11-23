@@ -10,6 +10,7 @@ const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'assets/app.css'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
+const exportUtilsSource = fs.readFileSync(path.join(root, 'assets/export-utils.js'), 'utf8');
 const researchHistorySource = fs.readFileSync(path.join(root, 'assets/research-history.js'), 'utf8');
 
 test('frontend draw normalization preserves official sales and payout without trusting third-party totalSales', () => {
@@ -677,11 +678,10 @@ test('a late refresh-token response cannot restore the previous account after ac
 
 
 test('CSV export quotes cells and neutralizes imported spreadsheet formula payloads', () => {
-  const start = app.indexOf('function csvCell(value)');
-  const end = app.indexOf('\nfunction exportSavedCheckHistory', start);
-  assert.ok(start >= 0 && end > start, 'CSV cell serializer must exist before export');
-  const context = {};
-  vm.runInNewContext(app.slice(start, end) + '\nthis.csvCell = csvCell;', context);
+  const context = {window:{}};
+  vm.runInNewContext(exportUtilsSource, context);
+  const csvCell = context.window.Lucky645ExportUtils.csvCell;
+  assert.equal(typeof csvCell, 'function');
 
   const cases = [
     ['=1+1', "'=1+1"],
@@ -695,10 +695,12 @@ test('CSV export quotes cells and neutralizes imported spreadsheet formula paylo
   ];
 
   for (const [input, expected] of cases) {
-    assert.equal(context.csvCell(input), '"' + expected.replace(/"/g, '""') + '"');
+    assert.equal(csvCell(input), '"' + expected.replace(/"/g, '""') + '"');
   }
-  assert.match(app, /rows\.map\(row=>row\.map\(csvCell\)\.join\(','\)\)/,
-    'every exported CSV field must pass through the sanitizer');
+  assert.match(app, /rows\.map\(row=>row\.map\(window\.Lucky645ExportUtils\.csvCell\)\.join\(','\)\)/,
+    'every exported CSV field must pass through the shared sanitizer');
+  assert.match(html, /assets\/export-utils\.js\?v=/,
+    'export utilities must load as a script before app.js');
 });
 
 
