@@ -453,11 +453,13 @@ test('switching or signing out during cloud sync invalidates the old sync genera
 
 
 test('account-owned browser records use isolated namespaces and migrate legacy data only to the first account', () => {
-  assert.match(app, /const ACCOUNT_SCOPED_KEYS = new Set\(/);
-  assert.match(app, /function accountScopedStorageKey\(key,\s*userId\)/);
-  assert.match(app, /key\+'::'\+String\(owner\)/);
-  assert.match(app, /if\(seen\.length===0\)/);
-  assert.match(app, /localStorage\.removeItem\(key\)/);
+  assert.match(storageScopeSource, /function createAccountStorage\(options\)/);
+  assert.match(storageScopeSource, /const scopedKeys = new Set/);
+  assert.match(storageScopeSource, /return name \+ '::' \+ String\(owner\)/);
+  assert.match(storageScopeSource, /if \(seen\.length === 0\)/);
+  assert.match(storageScopeSource, /storage\.removeItem\(name\)/);
+  assert.match(app, /window\.Lucky645Storage\.createAccountStorage\(/);
+  assert.match(app, /function accountScopedStorageKey\(key,userId\)/);
   assert.match(app, /function appStorageGet\(key\)/);
   assert.match(app, /function appStorageSet\(key,value\)/);
   assert.match(app, /function reloadAccountScopedState\(\)/);
