@@ -129,3 +129,17 @@ Files:
 - Current stored footprint is small: 132 sync rows (max payload 390 bytes) and 1 research report (35,403 bytes). These are point-in-time counts, not quotas.
 - Supabase Security Advisor returned one warning: leaked-password protection is disabled. Performance and health advisors returned no findings. Enabling this Auth setting is recommended, but no setting/policy/schema changes were made in this pass. See https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection
 - RLS is enabled but not forced on either table. Authenticated client access remains restricted by policies; table-owner/service-role bypass behavior is separate and should be considered when designing privileged server-side operations.
+
+## Incremental frontend modularization (2026-11-24)
+
+- Extracted CSV export cell serialization and spreadsheet-formula neutralization from the main app entry into assets/export-utils.js.
+- index.html loads the shared utility before assets/app.js; both script URLs carry explicit cache-busting versions.
+- app.js now calls window.Lucky645ExportUtils.csvCell; tests load the utility in isolation and verify all exported cells route through it.
+- This is the first narrow module extraction, not a wholesale frontend rewrite. The main app remains a large legacy entry file. Next extraction candidates are persistence/account scope and data-source adapters, each gated by focused contract tests.
+
+## Latest verified CI and Preview (commit 09916f0d8b6c03da1407b0b403d975e1aadf0c87)
+
+- GitHub Actions Run #45242250743 passed all three jobs: LUCKY 645 API/frontend suite, Python 3.14 Ubuntu and Python 3.14 Windows.
+- Vercel Preview is READY at https://auto-one-lucky645-fcc0ykjsi-ehdrlf2797-3377.vercel.app
+- An authenticated or full browser smoke test has not been completed. TinyFish read-only smoke test did not start because the connected TinyFish wallet had a negative balance (-$0.312); no paid top-up was performed.
+- PR #32 remains Draft/open/unmerged. Production deployment and Supabase DDL/policy/settings changes were not performed.

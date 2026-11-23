@@ -105,16 +105,34 @@ state, tests not run, unresolved risks, and actions not performed.
 
 | Item | Status | Evidence | Remaining action |
 |---|---|---|---|
-| Sales/payout field mapping | Confirmed in code and previous CI | PR #32 and historical audit report | Keep regression tests |
-| Duplicate prize rank rejection | Implemented; latest CI API/UI job passed | Commit history on feature branch; Run #165 | Wait for all jobs |
-| Late token refresh account-switch guard | Implemented; API/UI job passed | `cloud-session.test.cjs`; Run #165 | Wait for all jobs |
-| Engineering review roadmap | Saved in repository | `ENGINEERING_REVIEW_2026-11-24.md` | Continue phased audit |
-| Codelit handoff | Drafted in repository | This document | User may review |
-| Authenticated visual verification | Unknown / not completed | Preview requires authenticated browser | Verify manually or via authorized browser session |
-| Merge / production release | Not attempted | PR remains Draft | Requires separate explicit approval |
+| Sales/payout field mapping | Implemented and audited across 1,251 rounds | Historical data audit and PR regression tests | Maintain source precedence |
+| Duplicate prize-rank rejection | Implemented in API and frontend normalization | Regression test; Run #45242250743 passed | None known |
+| Late refresh-token account-switch guard | Implemented | Cloud-session regression test; prior full CI | Include in future auth refactor tests |
+| CSV spreadsheet formula injection | Fixed; shared serializer extracted | Formula-prefix vectors and module test; Run #45242250743 passed | Keep test coverage |
+| Backup restore partial-write risk | Fixed with rollback-aware staged storage transaction | Success/failure rollback tests; Run #45242250743 passed | Real-browser quota failure remains untested |
+| Saved data capacity and normalization | Added 10,000 saved combo and 50,000 check-history ceilings | Import, save-path and capacity tests; Run #45242250743 passed | Review legacy oversized local storage separately |
+| HTML sink source review | Inspected; no executable DOM XSS reproduced in reviewed paths | Source-level review documented in engineering review | Authenticated browser penetration testing remains open |
+| Supabase account isolation | RLS ownership policies, grants, indexes and advisors inspected read-only | lucky645-cloud; advisor warning documented | No schema/policy change made |
+| Frontend modularization | First extraction: assets/export-utils.js | Cache-version/load-order tests; Run #45242250743 | Next: storage/account scope module |
+| Authenticated Preview smoke test | Not completed | TinyFish run did not start due wallet balance -$0.312; no credit purchase | Needs available browser execution balance and user-managed sign-in profile |
+| Merge / production release | Not attempted | PR #32 is Draft/open/unmerged | Separate explicit approval required |
 
-## Next concrete action
+## Latest verified acceptance evidence
 
-Complete Run #165, then begin P-04 by testing the dynamic HTML sinks with persisted HTML-like payloads before refactoring the frontend.
- 
+- **CI Run #45242250743** on commit 09916f0d8b6c03da1407b0b403d975e1aadf0c87: all 3 jobs passed (LUCKY 645 API/frontend, Python 3.14 Ubuntu, Python 3.14 Windows).
+- **Vercel Preview:** READY — https://auto-one-lucky645-fcc0ykjsi-ehdrlf2797-3377.vercel.app
+- Static/source tests cover sales/payout mapping, duplicate ranks, refresh-token account switching, CSV injection vectors, import limits, staged backup restore, and storage rollback.
+- Supabase read-only audit found RLS enabled on both LUCKY 645 tables and owner-bound authenticated policies. Supabase Security Advisor reported leaked-password protection disabled; no setting change was made.
+- HTML review is source-level only. No authenticated browser smoke or penetration test is claimed.
+- PR #32 remains Draft/open/unmerged. No production deployment, Supabase schema change, or RLS-policy change was made.
+
+## Next concrete actions
+
+1. Extract the account-scoped storage adapter from app.js into a small module, preserving user-ID and session-generation guards and adding contract tests for account switching.
+2. Benchmark current research and 1,000,000-iteration simulation paths using reproducible fixtures before tuning algorithms; do not claim better lottery odds.
+3. Add a byte-budget policy for storage only after measuring real persisted payload distribution and defining a no-data-loss migration path.
+4. Reassess remaining dynamic HTML sinks with persisted HTML-like fixtures. Keep browser-level XSS testing as a separate release gate.
+5. Repeat full CI and Preview validation after each bounded change.
+6. Keep authenticated visual verification, merge, production deploy, and Supabase mutations outside the autonomous change scope.
+
 [Explore Plan & Ship in Codelit](https://codelit.io/plan-and-ship)
