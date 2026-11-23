@@ -90,6 +90,14 @@ function normalizeDraw(raw) {
     }).filter(item => item.prize !== null || item.winners !== null);
   }
 
+  // Duplicate rank rows are ambiguous. Exclude every occurrence of a duplicated
+  // rank so an apparently complete 1st–5th set cannot produce a false payout.
+  const rankCounts = new Map();
+  for (const item of ranks) {
+    rankCounts.set(item.rank, (rankCounts.get(item.rank) || 0) + 1);
+  }
+  ranks = ranks.filter(item => rankCounts.get(item.rank) === 1);
+
   // Only the official whole-episode sales field is authoritative for sales.
   // Third-party mirrors may misuse `totalSales` for prize payouts; never trust it here.
   const rawSales = asInteger(raw.wholEpsdSumNtslAmt);
