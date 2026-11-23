@@ -251,8 +251,16 @@ function normalizeSavedCheckRecord(item) {
 }
 
 function loadSavedCheckHistory() {
-  try { const raw = JSON.parse(appStorageGet(SAVED_CHECKS_KEY) || '[]'); return Array.isArray(raw) ? raw.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY).map(normalizeSavedCheckRecord).filter(Boolean) : []; }
-  catch (_) { return []; }
+  try {
+    const raw = JSON.parse(appStorageGet(SAVED_CHECKS_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    const normalized = [];
+    for (let index=raw.length-1; index>=0 && normalized.length<MAX_SAVED_BACKUP_CHECK_HISTORY; index--) {
+      const record = normalizeSavedCheckRecord(raw[index]);
+      if (record) normalized.push(record);
+    }
+    return normalized.reverse();
+  } catch (_) { return []; }
 }
 
 function loadAutoCheckMeta() {
@@ -1112,7 +1120,13 @@ function recordResearchRun(report) {
 function loadResearchCandidates() {
   try {
     const value = JSON.parse(appStorageGet(RESEARCH_CANDIDATES_KEY) || '[]');
-    return Array.isArray(value) ? value.slice(0,100).filter(item => item && typeof item.id === 'string' && typeof item.label === 'string') : [];
+    if (!Array.isArray(value)) return [];
+    const candidates = [];
+    for (const item of value) {
+      if (item && typeof item.id === 'string' && typeof item.label === 'string') candidates.push(item);
+      if (candidates.length >= 100) break;
+    }
+    return candidates;
   } catch (_) { return []; }
 }
 
