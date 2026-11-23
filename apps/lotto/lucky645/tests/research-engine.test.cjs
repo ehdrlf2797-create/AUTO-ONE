@@ -135,6 +135,29 @@ test('typed-array Monte Carlo sampler preserves the previous seeded draw sequenc
 });
 
 
+
+test('one-million Monte Carlo run completes with 100 progress yields and six million selections', async (t) => {
+  const research = loadResearch();
+  const progress = [];
+  const startedAt = Date.now();
+  const result = await research.runMonteCarlo(
+    1000000,
+    [1,2,3,4,5,6],
+    (completed,total) => progress.push([completed,total]),
+    'ci-one-million-smoke'
+  );
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(result.attempts,1000000);
+  assert.equal(result.totalSelections,6000000);
+  assert.equal(result.numberCounts.reduce((sum,value)=>sum+value,0),6000000);
+  assert.equal(result.matchCounts.reduce((sum,value)=>sum+value,0),1000000);
+  assert.equal(progress.length,100);
+  assert.deepEqual(progress[0],[10000,1000000]);
+  assert.deepEqual(progress.at(-1),[1000000,1000000]);
+  t.diagnostic('1,000,000 Monte Carlo draws completed in '+elapsedMs+' ms on this CI runner; this is not a mobile-device benchmark.');
+});
+
 test('research protocol refuses non-requested simulation and strategy counts', async () => {
   const research = loadResearch();
   await assert.rejects(
