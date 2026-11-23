@@ -594,3 +594,44 @@ test('draw data refresh exposes a manual retry and always restores the refresh c
   assert.match(refreshSource, /finally \\{[\\s\\S]*isRefreshing = false;[\\s\\S]*refreshButton\\.disabled = false;/,
     'refresh lock and button must be restored after both success and failure');
 });
+
+
+test('refresh failure reports the error and releases the retry control', async () => {
+  const start = app.indexOf('async function refreshData(');
+  const end = app.indexOf('\\nfunction updateTopStats()', start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+
+  const status = {textContent:'', title:'', style:{}};
+  const refreshButton = {disabled:false};
+  const context = {
+    $: id => id === 'dataStatus' ? status : (id === 'refreshBtn' ? refreshButton : null),
+    isRefreshing:false,
+    syncMeta:{status:'idle', errors:[]},
+    persistSyncMeta(){},
+    API_ALL_SOURCES:[],
+    API_PROXY_LATEST:'/api/lotto?type=latest',
+    API_LATEST:'https://official.invalid/latest',
+    API_LATEST_FALLBACK:'https://mirror.invalid/latest',
+    CSV_FALLBACK:'https://csv.invalid/history.csv',
+    getJson:async () => { throw new Error('source_unavailable'); },
+    getText:async () => { throw new Error('csv_unavailable'); },
+    isUnavailableLocalProxy:() => false,
+    draws:[],
+    FALLBACK_DRAW:{round:1,source:'fallback',numbers:[],bonus:0},
+    mergeDraws:() => { throw new Error('forced_refresh_failure'); },
+    hasRealDrawData:() => false,
+    renderLatest(){},
+    toast(){}
+  };
+
+  vm.createContext(context);
+  vm.runInContext(app.slice(start,end) + '\\nthis.refreshData = refreshData;', context);
+  await context.refreshData(false);
+
+  assert.equal(status.textContent, '데이터 연결 확인 필요');
+  assert.match(status.title, /forced_refresh_failure/);
+  assert.equal(context.syncMeta.status, 'error');
+  assert.equal(context.isRefreshing, false);
+  assert.equal(refreshButton.disabled, false);
+});
