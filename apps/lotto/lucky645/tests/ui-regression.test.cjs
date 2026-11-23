@@ -726,3 +726,80 @@ test('backup import limits reject oversized saved-entry and history arrays befor
     /최대 50,000건/
   );
 });
+
+
+test('backup restore storage transaction rolls back earlier keys when a later write fails', () => {
+  const start = app.indexOf('function writeStorageTransaction(entries)');
+  const end = app.indexOf('\nasync function importSavedBackup', start);
+  assert.ok(start >= 0 && end > start, 'transaction helper must exist before the backup importer');
+
+  const storage = new Map([
+    ['saved::account-A', 'old-saved'],
+    ['history::account-A', 'old-history']
+  ]);
+  const writes = [];
+  const context = {
+    appStorageGet:key=>storage.has(key)?storage.get(key):null,
+    appStorageSet(key,value) {
+      writes.push([key,String(value)]);
+      if (key === 'history::account-A' && value === 'new-history') {
+        throw new Error('quota exceeded');
+      }
+      storage.set(key,String(value));
+    },
+    appStorageRemove:key=>storage.delete(key)
+  };
+  vm.runInNewContext(
+    app.slice(start,end) + '\nthis.writeStorageTransaction = writeStorageTransaction;',
+    context
+  );
+
+  assert.throws(() => context.writeStorageTransaction([
+    ['saved::account-A','new-saved'],
+    ['history::account-A','new-history'],
+    ['meta::account-A','new-meta']
+  ]), /기존 저장값으로 되돌렸습니다/);
+  assert.equal(storage.get('saved::account-A'),'old-saved');
+  assert.equal(storage.get('history::account-A'),'old-history');
+  assert.equal(storage.has('meta::account-A'),false);
+  assert.deepEqual(writes,[
+    ['saved::account-A','new-saved'],
+    ['history::account-A','new-history'],
+    ['saved::account-A','old-saved']
+  ]);
+});
+
+test('backup restore storage transaction commits all entries when every write succeeds', () => {
+  const start = app.indexOf('function writeStorageTransaction(entries)');
+  const end = app.indexOf('\nasync function importSavedBackup', start);
+  const storage = new Map();
+  const context = {
+    appStorageGet:key=>storage.has(key)?storage.get(key):null,
+    appStorageSet:(key,value)=>storage.set(key,String(value)),
+    appStorageRemove:key=>storage.delete(key)
+  };
+  vm.runInNewContext(
+    app.slice(start,end) + '\nthis.writeStorageTransaction = writeStorageTransaction;',
+    context
+  );
+  assert.equal(context.writeStorageTransaction([
+    ['saved','new-saved'],['history','new-history'],['meta','new-meta']
+  ]),true);
+  assert.equal(storage.get('saved'),'new-saved');
+  assert.equal(storage.get('history'),'new-history');
+  assert.equal(storage.get('meta'),'new-meta');
+});
+
+test('backup importer stages state and writes saved data, history and metadata transactionally', () => {
+  const start = app.indexOf('async function importSavedBackup(file)');
+  const end = app.indexOf('\nfunction modeLabel(mode)',start);
+  assert.ok(start >= 0 && end > start);
+  const importer = app.slice(start,end);
+  assert.match(importer,/const nextSaved = saved\.map/);
+  assert.match(importer,/const nextHistory = savedCheckHistory\.map/);
+  assert.match(importer,/const nextMeta = \{\.\.\.autoCheckMeta\}/);
+  assert.match(importer,/writeStorageTransaction\(\[/);
+  assert.match(importer,/saved = nextSaved;[\s\S]*savedCheckHistory = boundedNextHistory;[\s\S]*autoCheckMeta = nextMeta;/);
+  assert.doesNotMatch(importer,/persistAutoCheckMeta\(\)|persistSavedCheckHistory\(\)|persistSaved\(\)/,
+    'the importer must not partially commit its individual storage records');
+});
