@@ -138,10 +138,13 @@ test('CSV history parser maps total sales and derives complete rank payout total
       {rank:1, prize:20, winners:1},
       {rank:2, prize:10, winners:1},
       {rank:3, prize:10, winners:1},
-      {rank:4, prize:10, winners:1}
+      {rank:4, prize:10, winners:1},
+      {rank:5, prize:10, winners:1}
     ]
   });
   assert.equal(incompleteRanks.totalPrizePayout, null);
+  assert.deepEqual(Array.from(incompleteRanks.ranks, item => item.rank), [2,3,4,5],
+    'all occurrences of a duplicate rank must be excluded from frontend payout data');
 });
 
 test('mergeDraws keeps trusted winning numbers and fills missing financial metrics from CSV', () => {
@@ -696,4 +699,26 @@ test('CSV export quotes cells and neutralizes imported spreadsheet formula paylo
   }
   assert.match(app, /rows\.map\(row=>row\.map\(csvCell\)\.join\(','\)\)/,
     'every exported CSV field must pass through the sanitizer');
+});
+
+
+test('backup import limits reject oversized saved-entry and history arrays before processing', () => {
+  const start = app.indexOf('const MAX_SAVED_BACKUP_ENTRIES');
+  const end = app.indexOf('\nfunction normalizeSavedEntry', start);
+  assert.ok(start >= 0 && end > start);
+  const context = {formatNumber:value=>Number(value).toLocaleString('ko-KR')};
+  vm.runInNewContext(
+    app.slice(start, end) + '\nthis.validateSavedBackupLimits = validateSavedBackupLimits;',
+    context
+  );
+
+  assert.doesNotThrow(() => context.validateSavedBackupLimits([], []));
+  assert.throws(
+    () => context.validateSavedBackupLimits(Array(10001), []),
+    /최대 10,000개/
+  );
+  assert.throws(
+    () => context.validateSavedBackupLimits([], Array(50001)),
+    /최대 50,000건/
+  );
 });
