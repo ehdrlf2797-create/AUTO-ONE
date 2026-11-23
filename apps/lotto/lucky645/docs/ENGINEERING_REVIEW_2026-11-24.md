@@ -117,3 +117,15 @@ Files:
 - The API/frontend CI job passed on 1bffc1b26bd56851f001ec8c4af59056a11a1293; Python Ubuntu/Windows jobs were still running at the time of this update. Re-check the latest full CI run after this documentation commit.
 - Preview deployment for 1bffc1b26bd56851f001ec8c4af59056a11a1293 reached READY: https://auto-one-lucky645-ftlh8fkhw-ehdrlf2797-3377.vercel.app
 - Authenticated browser verification remains outstanding. PR #32 remains Draft/open/unmerged; no main, production, or Supabase schema/RLS changes were made.
+
+
+### Supabase cloud isolation review (read-only)
+
+- Project: lucky645-cloud, ACTIVE_HEALTHY, ap-northeast-2.
+- Both public.lucky645_sync_records and public.lucky645_research_runs have RLS enabled. The four policies on each table target authenticated and constrain SELECT/DELETE with auth.uid() = user_id; INSERT uses the same ownership predicate in WITH CHECK; UPDATE includes both USING and WITH CHECK with the same owner predicate.
+- Table grants show authenticated SELECT/INSERT/UPDATE/DELETE; no anon table grants were returned for these two tables. Service-role grants are present as expected; the frontend uses a publishable key, not a service-role key.
+- Ownership uniqueness is enforced by the sync-record unique index on (user_id, category, record_key) and the research-runs primary key on (user_id, run_id). Supporting user/date and user/update indexes exist.
+- Research report JSON is constrained to object values up to 2 MiB; run_id is constrained to 1–128 characters. The sync-record payload has no comparable explicit JSON byte-size CHECK, so adding a database-level bound is a future schema-hardening candidate that remains unimplemented pending separate approval.
+- Current stored footprint is small: 132 sync rows (max payload 390 bytes) and 1 research report (35,403 bytes). These are point-in-time counts, not quotas.
+- Supabase Security Advisor returned one warning: leaked-password protection is disabled. Performance and health advisors returned no findings. Enabling this Auth setting is recommended, but no setting/policy/schema changes were made in this pass. See https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection
+- RLS is enabled but not forced on either table. Authenticated client access remains restricted by policies; table-owner/service-role bypass behavior is separate and should be considered when designing privileged server-side operations.
