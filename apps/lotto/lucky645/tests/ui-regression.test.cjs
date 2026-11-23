@@ -576,3 +576,21 @@ test('draw history table shows distinct sales and payout columns with explicit m
   context.renderHistory();
   assert.equal((elements.historyList.innerHTML.match(/자료 없음/g)||[]).length,2);
 });
+
+
+test('draw data refresh exposes a manual retry and always restores the refresh control', () => {
+  const start = app.indexOf('async function refreshData(');
+  const end = app.indexOf('\\nfunction updateTopStats()', start);
+  assert.notEqual(start, -1, 'refresh workflow must exist');
+  assert.notEqual(end, -1, 'refresh workflow must have a clear boundary');
+  const refreshSource = app.slice(start, end);
+
+  assert.match(html, /id="refreshBtn"/, 'manual refresh control must exist');
+  assert.match(app, /\\$\\('refreshBtn'\\)\\.addEventListener\\('click',\\(\\)=>refreshData\\(true\\)\\)/);
+  assert.match(refreshSource, /if \\(isRefreshing\\) return;/, 'duplicate refresh requests must be blocked');
+  assert.match(refreshSource, /refreshButton\\.disabled = true/);
+  assert.match(refreshSource, /status\\.textContent = '데이터 연결 확인 필요'/);
+  assert.match(refreshSource, /status\\.title = errors\\.join/);
+  assert.match(refreshSource, /finally \\{[\\s\\S]*isRefreshing = false;[\\s\\S]*refreshButton\\.disabled = false;/,
+    'refresh lock and button must be restored after both success and failure');
+});
