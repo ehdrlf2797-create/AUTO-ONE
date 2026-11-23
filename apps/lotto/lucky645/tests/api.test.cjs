@@ -161,3 +161,21 @@ test('status endpoint documents that cache metrics are per serverless instance',
   assert.equal(status.cacheScope,'serverless-instance-memory');
   assert.match(status.cacheNote,/다른 인스턴스의 캐시 상태를 대표하지 않습니다/);
 });
+
+
+test('does not derive payout from duplicated rank rows', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    ranks: [
+      {rank:1,prize:100,winners:2},
+      {rank:1,prize:999,winners:9},
+      {rank:2,prize:20,winners:3},
+      {rank:3,prize:5,winners:4},
+      {rank:4,prize:4,winners:5},
+      {rank:5,prize:1,winners:6}
+    ]
+  });
+  assert.equal(draw.totalPrizePayout, null);
+  assert.equal(draw.ranks.some(item => item.rank === 1), false);
+  assert.deepEqual(draw.ranks.map(item => item.rank), [2, 3, 4, 5]);
+});
