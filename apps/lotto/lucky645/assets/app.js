@@ -39,6 +39,8 @@ const MAX_RESEARCH_HISTORY = 12;
 const MAX_SIMULATION_HISTORY = 20;
 const AUTO_CHECK_KEY = 'lucky645_auto_check_meta_v1';
 const MAX_BACKUP_FILE_SIZE = 12 * 1024 * 1024;
+const MAX_SAVED_BACKUP_ENTRIES = 10000;
+const MAX_SAVED_BACKUP_CHECK_HISTORY = 50000;
 const SUPABASE_URL = 'https://absljxjxrrhmswhpthol.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_OPEj3uNdx3wX7r9C6KDuuA_IuyeTD9p';
 const CLOUD_TOMBSTONES_KEY = 'lucky645_cloud_tombstones_v1';
@@ -179,7 +181,7 @@ function normalizeSimulationProfile(item,index=0) {
 function loadSimulationProfiles() {
   try {
     const raw=JSON.parse(appStorageGet(SIMULATION_HISTORY_KEY)||'[]');
-    return Array.isArray(raw)?raw.map(normalizeSimulationProfile).filter(Boolean).slice(0,MAX_SIMULATION_HISTORY):[];
+    return Array.isArray(raw)?raw.slice(0,MAX_SIMULATION_HISTORY).map(normalizeSimulationProfile).filter(Boolean):[];
   } catch (_) { return []; }
 }
 
@@ -195,9 +197,19 @@ function persistSimulationProfiles(nextProfiles) {
 }
 
 
+function validateSavedBackupLimits(savedRows, historyRows) {
+  if (!Array.isArray(savedRows)) throw new Error('저장 번호 목록이 올바르지 않습니다.');
+  if (savedRows.length > MAX_SAVED_BACKUP_ENTRIES) {
+    throw new Error(`저장 조합은 한 번에 최대 ${formatNumber(MAX_SAVED_BACKUP_ENTRIES)}개까지 가져올 수 있습니다.`);
+  }
+  if (Array.isArray(historyRows) && historyRows.length > MAX_SAVED_BACKUP_CHECK_HISTORY) {
+    throw new Error(`확인 이력은 한 번에 최대 ${formatNumber(MAX_SAVED_BACKUP_CHECK_HISTORY)}건까지 가져올 수 있습니다.`);
+  }
+}
+
 function normalizeSavedEntry(entry, index = 0) {
   if (!entry || typeof entry !== 'object' || !Array.isArray(entry.numbers)) return null;
-  const numbers = entry.numbers.map(Number);
+  const numbers = entry.numbers.length === 6 ? entry.numbers.map(Number) : [];
   if (numbers.length !== 6 || new Set(numbers).size !== 6 || numbers.some(number => !Number.isInteger(number) || number < 1 || number > 45)) return null;
   return {
     id: String(entry.id || `restored-${index}`).slice(0, 100),
@@ -220,7 +232,7 @@ function loadSaved() {
 function normalizeSavedCheckRecord(item) {
   if (!item || typeof item !== 'object') return null;
   const round = Number(item.round);
-  const numbers = Array.isArray(item.numbers) ? item.numbers.map(Number) : [];
+  const numbers = Array.isArray(item.numbers) && item.numbers.length === 6 ? item.numbers.map(Number) : [];
   const matches = Number(item.matches);
   const rank = String(item.rank || '낙첨');
   if (!Number.isInteger(round) || round < 1 || !Number.isInteger(matches) || matches < 0 || matches > 6 ||
@@ -230,7 +242,7 @@ function normalizeSavedCheckRecord(item) {
     id: String(item.id || `${round}-${item.savedId || ''}`).slice(0,120),
     savedId: String(item.savedId || '').slice(0,100),
     numbers: sortNums(numbers), round, date: typeof item.date === 'string' ? item.date.slice(0,20) : '',
-    matches, bonusMatch: Boolean(item.bonusMatch), rank, winningNumbers: Array.isArray(item.winningNumbers) ? item.winningNumbers.map(Number).filter(n=>Number.isInteger(n)&&n>=1&&n<=45).slice(0,6) : [],
+    matches, bonusMatch: Boolean(item.bonusMatch), rank, winningNumbers: Array.isArray(item.winningNumbers) ? item.winningNumbers.slice(0,6).map(Number).filter(n=>Number.isInteger(n)&&n>=1&&n<=45) : [],
     bonus: Number.isInteger(Number(item.bonus)) ? Number(item.bonus) : null,
     checkedAt: typeof item.checkedAt === 'string' ? item.checkedAt.slice(0,40) : '',
     source: typeof item.source === 'string' ? item.source.slice(0,40) : '확인',
@@ -239,7 +251,7 @@ function normalizeSavedCheckRecord(item) {
 }
 
 function loadSavedCheckHistory() {
-  try { const raw = JSON.parse(appStorageGet(SAVED_CHECKS_KEY) || '[]'); return Array.isArray(raw) ? raw.map(normalizeSavedCheckRecord).filter(Boolean).slice(-50000) : []; }
+  try { const raw = JSON.parse(appStorageGet(SAVED_CHECKS_KEY) || '[]'); return Array.isArray(raw) ? raw.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY).map(normalizeSavedCheckRecord).filter(Boolean) : []; }
   catch (_) { return []; }
 }
 
@@ -253,7 +265,7 @@ function loadAutoCheckMeta() {
 
 function persistSavedCheckHistory() {
   try {
-    appStorageSet(SAVED_CHECKS_KEY, JSON.stringify(savedCheckHistory.slice(-50000)));
+    appStorageSet(SAVED_CHECKS_KEY, JSON.stringify(savedCheckHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY)));
     if (!cloudApplying) scheduleCloudSync();
     return true;
   } catch (_) {
@@ -665,7 +677,7 @@ function normalizeDraw(raw) {
     raw.tm6WnNo ?? raw.n6 ?? raw.drwtNo6
   ];
   const round = Number(raw.round ?? raw.draw_no ?? raw.ltEpsd ?? raw.drwNo);
-  const numbers = Array.isArray(nums) ? nums.map(Number) : [];
+  const numbers = Array.isArray(nums) && nums.length === 6 ? nums.map(Number) : [];
   const bonus = Number(raw.bonus ?? raw.bonus_no ?? raw.bnsWnNo ?? raw.bnusNo);
   if (!Number.isSafeInteger(round) || round < 1 || numbers.length !== 6 || new Set(numbers).size !== 6 ||
       numbers.some(number => !Number.isInteger(number) || number < 1 || number > 45) ||
@@ -698,6 +710,11 @@ function normalizeDraw(raw) {
     prize: Number.isFinite(item.prize) && item.prize >= 0 ? item.prize : null,
     winners: Number.isFinite(item.winners) && item.winners >= 0 ? item.winners : null
   }));
+
+  // Duplicate ranks are ambiguous and must never be used to derive a frontend payout.
+  const rankCounts = new Map();
+  for (const item of ranks) rankCounts.set(item.rank, (rankCounts.get(item.rank) || 0) + 1);
+  ranks = ranks.filter(item => rankCounts.get(item.rank) === 1);
 
   // Official API: wholEpsdSumNtslAmt. Cashlogy CSV: totSellamnt.
   // Do not treat third-party totalSales aliases as authoritative.
@@ -1095,7 +1112,7 @@ function recordResearchRun(report) {
 function loadResearchCandidates() {
   try {
     const value = JSON.parse(appStorageGet(RESEARCH_CANDIDATES_KEY) || '[]');
-    return Array.isArray(value) ? value.filter(item => item && typeof item.id === 'string' && typeof item.label === 'string').slice(0,100) : [];
+    return Array.isArray(value) ? value.slice(0,100).filter(item => item && typeof item.id === 'string' && typeof item.label === 'string') : [];
   } catch (_) { return []; }
 }
 
@@ -2260,7 +2277,8 @@ async function importSavedBackup(file) {
     assertAccountScope(importOwner,importGeneration);
     const raw = JSON.parse(fileText);
     const rows = Array.isArray(raw) ? raw : raw?.saved;
-    if (!Array.isArray(rows)) throw new Error('저장 번호 목록이 없습니다.');
+    const importedHistoryRows = Array.isArray(raw?.savedCheckHistory) ? raw.savedCheckHistory : [];
+    validateSavedBackupLimits(rows, importedHistoryRows);
     const normalized = rows.map(normalizeSavedEntry).filter(Boolean);
     if (!normalized.length && rows.length) throw new Error('유효한 번호 조합이 없습니다.');
     const localByNumbers = new Map(saved.map(entry=>[entry.numbers.join('-'),entry]));
@@ -2282,7 +2300,7 @@ async function importSavedBackup(file) {
       }
       importedIdMap.set(String(entry.id), local.id);
     });
-    const importedHistory = Array.isArray(raw?.savedCheckHistory) ? raw.savedCheckHistory.map(normalizeSavedCheckRecord).filter(Boolean) : [];
+    const importedHistory = importedHistoryRows.map(normalizeSavedCheckRecord).filter(Boolean);
     const historyKeys = new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
     let historyAdded = 0;
     importedHistory.forEach(row=>{
@@ -3001,7 +3019,7 @@ function cloudTombstonesStorageKey() {
   return userId ? CLOUD_TOMBSTONES_KEY+':'+userId : CLOUD_TOMBSTONES_KEY+':local';
 }
 function loadCloudTombstones() {
-  try { const rows=JSON.parse(appStorageGet(cloudTombstonesStorageKey())||'[]'); return Array.isArray(rows)?rows:[]; } catch (_) { return []; }
+  try { const rows=JSON.parse(appStorageGet(cloudTombstonesStorageKey())||'[]'); return Array.isArray(rows)?rows.slice(-50000):[]; } catch (_) { return []; }
 }
 function persistCloudTombstones(rows) {
   try { appStorageSet(cloudTombstonesStorageKey(), JSON.stringify(rows.slice(-50000))); } catch (_) {}
