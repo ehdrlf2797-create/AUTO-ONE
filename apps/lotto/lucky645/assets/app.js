@@ -3075,6 +3075,8 @@ async function cloudAccessToken() {
   }
 
   const attemptedRefreshToken=cloudSession.refresh_token;
+  const refreshUserId=cloudSession?.user?.id||'';
+  const refreshGeneration=cloudSessionGeneration;
   let refreshed;
   try {
     refreshed=await cloudAuth('token?grant_type=refresh_token',{refresh_token:attemptedRefreshToken});
@@ -3104,7 +3106,22 @@ async function cloudAccessToken() {
     throw error;
   }
 
-  saveCloudSession({...refreshed,expires_at:Math.floor(Date.now()/1000)+Number(refreshed.expires_in||3600)});
+  // A late refresh response must never restore a session after the user switched
+  // accounts or signed out while the request was in flight.
+  if(cloudSessionGeneration!==refreshGeneration||cloudSession?.user?.id!==refreshUserId) {
+    throw new Error('계정이 변경되어 이전 로그인 세션 갱신을 취소했습니다.');
+  }
+  // Another tab may already have rotated the refresh token for this same account.
+  if(cloudSession?.refresh_token!==attemptedRefreshToken) {
+    if(cloudSession?.user?.id===refreshUserId&&cloudSession?.access_token&&cloudSession?.refresh_token) {
+      return cloudSession.access_token;
+    }
+    throw new Error('로그인 세션이 변경되어 다시 동기화해야 합니다.');
+  }
+  if(refreshed?.user?.id&&refreshed.user.id!==refreshUserId) {
+    throw new Error('로그인 계정이 일치하지 않아 세션 갱신을 취소했습니다.');
+  }
+  saveCloudSession({...refreshed,user:refreshed.user||cloudSession.user,expires_at:Math.floor(Date.now()/1000)+Number(refreshed.expires_in||3600)});
   return cloudSession.access_token;
 }
 function renderCloudAuth(message='') {
