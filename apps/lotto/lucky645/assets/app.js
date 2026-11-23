@@ -3108,7 +3108,7 @@ async function cloudAccessToken() {
 
   // A late refresh response must never restore a session after the user switched
   // accounts or signed out while the request was in flight.
-  if(cloudSessionGeneration!==refreshGeneration||cloudSession?.user?.id!==refreshUserId) {
+  if(cloudSessionGeneration!==refreshGeneration||(cloudSession?.user?.id||'')!==refreshUserId) {
     throw new Error('계정이 변경되어 이전 로그인 세션 갱신을 취소했습니다.');
   }
   // Another tab may already have rotated the refresh token for this same account.
