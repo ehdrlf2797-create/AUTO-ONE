@@ -803,3 +803,34 @@ test('backup importer stages state and writes saved data, history and metadata t
   assert.doesNotMatch(importer,/persistAutoCheckMeta\(\)|persistSavedCheckHistory\(\)|persistSaved\(\)/,
     'the importer must not partially commit its individual storage records');
 });
+
+
+test('saved collection capacity accepts configured maxima and rejects overflow', () => {
+  const start = app.indexOf('function assertSavedCollectionCapacity(');
+  const end = app.indexOf('\nfunction normalizeSavedEntry',start);
+  assert.ok(start >= 0 && end > start);
+  const context = {
+    MAX_SAVED_ENTRIES:10000,
+    MAX_SAVED_BACKUP_CHECK_HISTORY:50000,
+    formatNumber:value=>Number(value).toLocaleString('ko-KR')
+  };
+  vm.runInNewContext(
+    app.slice(start,end) + '\nthis.assertSavedCollectionCapacity = assertSavedCollectionCapacity;',
+    context
+  );
+  assert.doesNotThrow(() => context.assertSavedCollectionCapacity(10000,50000));
+  assert.throws(() => context.assertSavedCollectionCapacity(10001,50000), /번호 보관함은 최대 10,000개/);
+  assert.throws(() => context.assertSavedCollectionCapacity(10000,50001), /확인 이력은 최대 50,000건/);
+});
+
+test('manual, bulk and simulation saves respect the saved collection limit without mutating on overflow', () => {
+  assert.match(app,/function saveCombination\(numbers,mode=activeMode\)[\s\S]*?if\(saved\.length>=MAX_SAVED_ENTRIES\)/);
+  assert.match(app,/function saveAllGenerated\(\)[\s\S]*?if\(saved\.length\+prepared\.added>MAX_SAVED_ENTRIES\)/);
+  const start=app.indexOf('function saveSimulationTicketSet()');
+  const end=app.indexOf('\nfunction exportAnalyticsCsv',start);
+  const simulationSave=app.slice(start,end);
+  assert.match(simulationSave,/if\(saved\.length\+entries\.length>MAX_SAVED_ENTRIES\)/);
+  assert.match(simulationSave,/persistSaved\(\[\.\.\.entries,\.\.\.saved\]\)/);
+  assert.doesNotMatch(simulationSave,/saved\.unshift\(/,
+    'simulation ticket save must stage records rather than mutate live state before persistence');
+});
