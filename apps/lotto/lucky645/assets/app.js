@@ -39,7 +39,8 @@ const MAX_RESEARCH_HISTORY = 12;
 const MAX_SIMULATION_HISTORY = 20;
 const AUTO_CHECK_KEY = 'lucky645_auto_check_meta_v1';
 const MAX_BACKUP_FILE_SIZE = 12 * 1024 * 1024;
-const MAX_SAVED_BACKUP_ENTRIES = 10000;
+const MAX_SAVED_ENTRIES = 10000;
+const MAX_SAVED_BACKUP_ENTRIES = MAX_SAVED_ENTRIES;
 const MAX_SAVED_BACKUP_CHECK_HISTORY = 50000;
 const SUPABASE_URL = 'https://absljxjxrrhmswhpthol.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_OPEj3uNdx3wX7r9C6KDuuA_IuyeTD9p';
@@ -2141,12 +2142,12 @@ function saveSimulationTicketSet() {
   if(!simulationGeneratedTickets.length) return toast('먼저 빈출 번호 조합을 생성해 주세요.');
   const known=new Set(saved.map(item=>item.numbers.join('-')));
   const now=new Date();
-  let added=0;
+  const entries=[];
   for(const numbers of simulationGeneratedTickets){
     const key=numbers.join('-');
     if(known.has(key)) continue;
     known.add(key);
-    saved.unshift({
+    entries.push({
       id:'sim-ticket-'+Date.now()+'-'+Math.random().toString(16).slice(2),
       numbers:sortNums(numbers),
       mode:'stats',
@@ -2154,12 +2155,15 @@ function saveSimulationTicketSet() {
       favorite:false,
       syncUpdatedAt:now.toISOString()
     });
-    added++;
   }
-  if(!added) return toast('생성한 조합은 이미 보관함에 있습니다.');
-  persistSaved();
+  if(!entries.length) return toast('생성한 조합은 이미 보관함에 있습니다.');
+  if(saved.length+entries.length>MAX_SAVED_ENTRIES) {
+    return toast('번호 보관함은 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개까지 저장할 수 있습니다. 기존 번호를 삭제하지는 않았습니다.');
+  }
+  if(!persistSaved([...entries,...saved])) return false;
   renderSavedReports();
-  toast(added+'개 조합을 내 번호 보관함에 저장했습니다.');
+  toast(entries.length+'개 조합을 내 번호 보관함에 저장했습니다.');
+  return true;
 }
 
 function exportAnalyticsCsv() {
@@ -2377,6 +2381,9 @@ async function importSavedBackup(file) {
       nextMeta.lastStatus = '백업에서 복원 · 회차 기준 검증 완료';
     }
 
+    if (nextSaved.length > MAX_SAVED_ENTRIES) {
+      throw new Error('복원 후 번호 보관함이 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개를 초과합니다. 기존 데이터를 삭제하지 않고 복원을 취소했습니다.');
+    }
     assertAccountScope(importOwner,importGeneration);
     const boundedNextHistory = nextHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY);
     writeStorageTransaction([
@@ -2863,6 +2870,10 @@ function saveCombination(numbers,mode=activeMode) {
     renderGenerated();
     return false;
   }
+  if(saved.length>=MAX_SAVED_ENTRIES) {
+    toast('번호 보관함은 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개까지 저장할 수 있습니다. 기존 번호를 삭제한 뒤 다시 시도해 주세요.');
+    return false;
+  }
   const now=new Date();
   const entry={
     id:String(now.getTime())+'-'+Math.random().toString(16).slice(2),
@@ -2888,6 +2899,10 @@ function saveAllGenerated() {
     if(prepared.duplicateCount||prepared.invalidCount) {
       toast('새로 저장할 조합이 없습니다. 중복 '+prepared.duplicateCount+'개, 잘못된 조합 '+prepared.invalidCount+'개');
     } else toast('새로 저장할 조합이 없습니다.');
+    return false;
+  }
+  if(saved.length+prepared.added>MAX_SAVED_ENTRIES) {
+    toast('번호 보관함은 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개까지 저장할 수 있습니다. 일부 조합만 저장하지는 않았습니다.');
     return false;
   }
   // 한 번의 localStorage 쓰기로 전체 저장합니다. 실패하면 saved 메모리 상태도 바꾸지 않습니다.
@@ -3394,6 +3409,33 @@ async function performCloudSync() {
       remoteState=row.payload;
     }
   }
+  // Validate the merged record counts before mutating in-memory state.
+  const prospectiveSavedByNumbers=new Map(saved.map(item=>[item.numbers.join('-'),item]));
+  const prospectiveRemoteSavedById=new Map();
+  for(const row of remoteSavedRows) {
+    const item=normalizeSavedEntry(row.payload);
+    if(!item)continue;
+    const key=item.numbers.join('-');
+    let local=prospectiveSavedByNumbers.get(key);
+    if(!local) {
+      local=item;
+      prospectiveSavedByNumbers.set(key,local);
+    }
+    prospectiveRemoteSavedById.set(String(row.payload?.id || row.record_key),local.id);
+    if(prospectiveSavedByNumbers.size>MAX_SAVED_ENTRIES) {
+      throw new Error('클라우드 번호 보관함이 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개를 초과합니다. 로컬 데이터를 덮어쓰지 않고 동기화를 중단했습니다.');
+    }
+  }
+  const prospectiveHistoryKeys=new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
+  for(const row of remoteHistoryRows) {
+    const item=normalizeCloudHistoryRecord(row,prospectiveRemoteSavedById,prospectiveSavedByNumbers);
+    if(!item)continue;
+    prospectiveHistoryKeys.add(`${Number(item.round)}:${String(item.savedId || item.id)}`);
+    if(prospectiveHistoryKeys.size>MAX_SAVED_BACKUP_CHECK_HISTORY) {
+      throw new Error('클라우드 확인 이력이 최대 '+formatNumber(MAX_SAVED_BACKUP_CHECK_HISTORY)+'건을 초과합니다. 로컬 데이터를 덮어쓰지 않고 동기화를 중단했습니다.');
+    }
+  }
+
   const localSavedByNumbers=new Map(saved.map(item=>[item.numbers.join('-'),item]));
   const remoteSavedById=new Map();
 
