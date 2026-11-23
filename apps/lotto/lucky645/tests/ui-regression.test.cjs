@@ -671,3 +671,29 @@ test('a late refresh-token response cannot restore the previous account after ac
   assert.equal(context.cloudSession.access_token,'access-B');
   assert.equal(context.cloudSessionGeneration,1);
 });
+
+
+test('CSV export quotes cells and neutralizes imported spreadsheet formula payloads', () => {
+  const start = app.indexOf('function csvCell(value)');
+  const end = app.indexOf('\nfunction exportSavedCheckHistory', start);
+  assert.ok(start >= 0 && end > start, 'CSV cell serializer must exist before export');
+  const context = {};
+  vm.runInNewContext(app.slice(start, end) + '\nthis.csvCell = csvCell;', context);
+
+  const cases = [
+    ['=1+1', "'=1+1"],
+    ['+SUM(1,1)', "'+SUM(1,1)"],
+    ['-1+cmd|/C calc', "'-1+cmd|/C calc"],
+    ['@SUM(1,1)', "'@SUM(1,1)"],
+    ['\t=HYPERLINK("https://example.invalid","open")', '\t=HYPERLINK("https://example.invalid","open")'],
+    ['  @SUM(1,1)', "'  @SUM(1,1)"],
+    ['ordinary label', 'ordinary label'],
+    [-12, '-12']
+  ];
+
+  for (const [input, expected] of cases) {
+    assert.equal(context.csvCell(input), '"' + expected.replace(/"/g, '""') + '"');
+  }
+  assert.match(app, /rows\.map\(row=>row\.map\(csvCell\)\.join\(','\)\)/,
+    'every exported CSV field must pass through the sanitizer');
+});
