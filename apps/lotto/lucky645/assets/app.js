@@ -2281,11 +2281,36 @@ function exportSavedBackup() {
   toast('번호 보관함 백업 파일을 저장했습니다.');
 }
 
+function writeStorageTransaction(entries) {
+  if (!Array.isArray(entries) || entries.some(entry => !Array.isArray(entry) || entry.length !== 2)) {
+    throw new Error('저장 작업 형식이 올바르지 않습니다.');
+  }
+  const previous = entries.map(([key]) => appStorageGet(key));
+  try {
+    entries.forEach(([key,value]) => appStorageSet(key,value));
+    return true;
+  } catch (error) {
+    let rollbackFailed = false;
+    entries.forEach(([key], index) => {
+      try {
+        if (previous[index] === null) appStorageRemove(key);
+        else appStorageSet(key, previous[index]);
+      } catch (_) {
+        rollbackFailed = true;
+      }
+    });
+    const detail = error?.message || '저장 공간 오류';
+    throw new Error(rollbackFailed
+      ? '백업 복원 중 저장에 실패했고 일부 이전 값 복구도 실패했습니다. 브라우저 저장 공간을 확보한 뒤 데이터를 확인해 주세요. (' + detail + ')'
+      : '백업 복원 저장에 실패해 기존 저장값으로 되돌렸습니다. 브라우저 저장 공간을 확인해 주세요. (' + detail + ')');
+  }
+}
+
 async function importSavedBackup(file) {
   if (!file) return;
   const importOwner=cloudSession?.user?.id||'local';
   const importGeneration=cloudSessionGeneration;
-  if (file.size > MAX_BACKUP_FILE_SIZE) return toast(`백업 파일은 ${(MAX_BACKUP_FILE_SIZE / 1024 / 1024).toFixed(0)}MB 이하만 불러올 수 있습니다.`);
+  if (file.size > MAX_BACKUP_FILE_SIZE) return toast(\`백업 파일은 \${(MAX_BACKUP_FILE_SIZE / 1024 / 1024).toFixed(0)}MB 이하만 불러올 수 있습니다.\`);
   try {
     const fileText=await file.text();
     assertAccountScope(importOwner,importGeneration);
@@ -2295,15 +2320,20 @@ async function importSavedBackup(file) {
     validateSavedBackupLimits(rows, importedHistoryRows);
     const normalized = rows.map(normalizeSavedEntry).filter(Boolean);
     if (!normalized.length && rows.length) throw new Error('유효한 번호 조합이 없습니다.');
-    const localByNumbers = new Map(saved.map(entry=>[entry.numbers.join('-'),entry]));
+
+    // Build the complete next state without mutating the live UI state.
+    const nextSaved = saved.map(entry => ({...entry,numbers:[...entry.numbers]}));
+    const nextHistory = savedCheckHistory.map(item => ({...item,numbers:[...item.numbers],winningNumbers:[...(item.winningNumbers||[])]}));
+    const nextMeta = {...autoCheckMeta};
+    const localByNumbers = new Map(nextSaved.map(entry=>[entry.numbers.join('-'),entry]));
     const importedIdMap = new Map();
     let added = 0;
     normalized.forEach(entry=>{
       const key = entry.numbers.join('-');
       let local = localByNumbers.get(key);
       if (!local) {
-        local = {...entry,id:`import-${Date.now()}-${added}`,syncUpdatedAt:entry.syncUpdatedAt || new Date().toISOString()};
-        saved.push(local); localByNumbers.set(key,local); added++;
+        local = {...entry,id:\`import-\${Date.now()}-\${added}\`,syncUpdatedAt:entry.syncUpdatedAt || new Date().toISOString()};
+        nextSaved.push(local); localByNumbers.set(key,local); added++;
       } else {
         const wasFavorite = local.favorite;
         mergeCloudSavedRecord(local,entry);
@@ -2314,38 +2344,52 @@ async function importSavedBackup(file) {
       }
       importedIdMap.set(String(entry.id), local.id);
     });
+
     const importedHistory = importedHistoryRows.map(normalizeSavedCheckRecord).filter(Boolean);
-    const historyKeys = new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
+    const historyKeys = new Set(nextHistory.map(row=>\`\${Number(row.round)}:\${String(row.savedId || row.id)}\`));
     let historyAdded = 0;
     importedHistory.forEach(row=>{
       const local = localByNumbers.get(row.numbers.join('-'));
       if (local) row.savedId = local.id;
       else if (importedIdMap.has(row.savedId)) row.savedId = importedIdMap.get(row.savedId);
-      const key=`${Number(row.round)}:${String(row.savedId || row.id)}`;
+      const key=\`\${Number(row.round)}:\${String(row.savedId || row.id)}\`;
       if(!historyKeys.has(key)){
         row.id = key;
-        savedCheckHistory.push(row); historyKeys.add(key); historyAdded++;
+        nextHistory.push(row); historyKeys.add(key); historyAdded++;
       }
     });
+
     if (raw?.autoCheckMeta && typeof raw.autoCheckMeta === 'object') {
       const importedRound = Number(raw.autoCheckMeta.lastRound);
       const newestKnownRound = Number(draws.at(-1)?.round || latest?.round || 0);
       if (Number.isSafeInteger(importedRound) && importedRound >= 0 && newestKnownRound > 0) {
-        autoCheckMeta.lastRound = Math.max(autoCheckMeta.lastRound || 0, Math.min(importedRound,newestKnownRound));
+        nextMeta.lastRound = Math.max(nextMeta.lastRound || 0, Math.min(importedRound,newestKnownRound));
       }
       const importedCheckedAt = normalizeSyncTimestamp(raw.autoCheckMeta.lastCheckedAt);
-      if (importedCheckedAt && (!autoCheckMeta.lastCheckedAt || importedCheckedAt > autoCheckMeta.lastCheckedAt)) {
-        autoCheckMeta.lastCheckedAt = importedCheckedAt;
+      if (importedCheckedAt && (!nextMeta.lastCheckedAt || importedCheckedAt > nextMeta.lastCheckedAt)) {
+        nextMeta.lastCheckedAt = importedCheckedAt;
       }
-      autoCheckMeta.lastStatus = '백업에서 복원 · 회차 기준 검증 완료';
-      persistAutoCheckMeta();
+      nextMeta.lastStatus = '백업에서 복원 · 회차 기준 검증 완료';
     }
-    persistSavedCheckHistory();
-    persistSaved();
+
+    assertAccountScope(importOwner,importGeneration);
+    writeStorageTransaction([
+      [SAVED_KEY,JSON.stringify(nextSaved)],
+      [SAVED_CHECKS_KEY,JSON.stringify(nextHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY))],
+      [AUTO_CHECK_KEY,JSON.stringify(nextMeta)]
+    ]);
+    saved = nextSaved;
+    savedCheckHistory = nextHistory;
+    autoCheckMeta = nextMeta;
+    if (!cloudApplying) scheduleCloudSync();
+    renderSaved();
+    updateTopStats();
     renderSavedReports();
-    toast(`${added}개 조합과 ${historyAdded}개 확인 이력을 가져왔습니다.`);
-  } catch (error) { toast(`백업 파일을 읽지 못했습니다: ${error.message}`); }
+    if (savedBacktestResult) runSavedBacktest();
+    toast(\`\${added}개 조합과 \${historyAdded}개 확인 이력을 가져왔습니다.\`);
+  } catch (error) { toast(\`백업 파일을 읽지 못했습니다: \${error.message}\`); }
 }
+
 
 function modeLabel(mode) {
   return ({random:'완전 무작위',balanced:'균형 조합',stats:'통계 참고',hybrid:'통계 + 무작위 혼합',custom:'직접 설정',coverage:'번호 커버리지 분산'})[mode] || '번호 추천';
