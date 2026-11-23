@@ -93,3 +93,27 @@ A second race was found in the browser auth flow: if account A's refresh-token r
 Files:
 - `assets/app.js`
 - `tests/ui-regression.test.cjs`
+
+
+## Security and persistence follow-up (2026-11-24)
+
+### Confirmed issues fixed
+
+- **CSV spreadsheet formula injection:** imported history fields could flow into the saved-check CSV export. A shared csvCell serializer now quotes every cell and prefixes string values that begin with spreadsheet formula characters (including whitespace/BOM-prefixed cases) with an apostrophe. Numeric negative values remain numeric. Regression vectors cover =, +, -, @, tab/space prefixes, ordinary text, and numeric values.
+- **Frontend duplicate-rank payout:** the API already discarded all occurrences of duplicated prize ranks, but the browser normalizeDraw path did not. It now applies the same rule before any fallback payout derivation. A regression test uses duplicate 1st-rank rows alongside ranks 2–5 and asserts that ambiguous 1st-rank data is excluded and no payout is derived.
+- **Backup restore partial writes:** the importer previously persisted saved combinations, check history and auto-check metadata separately, allowing partial local state to remain after a quota/write failure. It now stages all three next-state values in memory, writes them via a rollback-aware storage transaction, then updates live state and schedules cloud sync only after storage succeeds. Tests cover successful commit, failure rollback and importer call order. Rollback is best-effort; an underlying storage failure can also prevent restoration, which is surfaced explicitly.
+- **Unbounded backup and collection input:** imported backups are limited to 10,000 saved combinations and 50,000 check-history rows, with validation before mapping. Existing/new saved combinations share a 10,000-entry ceiling, and check history is capped to the latest 50,000 persisted records. Operations that would exceed the saved-entry ceiling abort without silently deleting existing entries. Cloud merge validates prospective unique record counts before mutating in-memory state.
+- **Avoid unnecessary malformed-array work:** six-number arrays are length-checked before mapping; winning-number arrays are sliced before normalization; simulation, research-candidate, saved-history and tombstone loaders limit their processing to their defined bounds. The history loader scans backward to retain the newest valid 50,000 records.
+
+### HTML sink review
+
+- Re-reviewed dynamic HTML insertion paths in assets/app.js, including saved history, research summaries, draw history, exports and popup output.
+- In the inspected persisted/imported values, HTML sinks used escaping or constrained numeric/enum values. No executable DOM XSS was reproduced in the reviewed paths.
+- This was a source-level review, not an authenticated browser penetration test. The remaining sink inventory and visual verification are still release-gate items; do not claim the whole application is XSS-free.
+
+### Regression and release evidence
+
+- New UI tests cover CSV formula neutralization, frontend duplicate ranks, import-count boundaries, rollback on a later storage write failure, successful multi-key storage commit, and the importer’s staged/transactional flow.
+- The API/frontend CI job passed on 1bffc1b26bd56851f001ec8c4af59056a11a1293; Python Ubuntu/Windows jobs were still running at the time of this update. Re-check the latest full CI run after this documentation commit.
+- Preview deployment for 1bffc1b26bd56851f001ec8c4af59056a11a1293 reached READY: https://auto-one-lucky645-ftlh8fkhw-ehdrlf2797-3377.vercel.app
+- Authenticated browser verification remains outstanding. PR #32 remains Draft/open/unmerged; no main, production, or Supabase schema/RLS changes were made.
