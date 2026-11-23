@@ -234,9 +234,12 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
   assert.deepEqual(missing, [], 'all literal app.js DOM lookups must exist in index.html');
 });
 
-test('static JavaScript uses an explicit cache-busting version', () => {
+test('static assets use explicit cache-busting versions and load shared utilities first', () => {
   assert.ok(html.includes('<link rel="stylesheet" href="/assets/app.css?v=20261123-sales-payout-ui-1" />'));
-  assert.ok(html.includes('<script defer src="/assets/app.js?v=20261123-sales-payout-ui-1"></script>'));
+  assert.ok(html.includes('<script defer src="/assets/export-utils.js?v=20261124-export-utils-1"></script>'));
+  assert.ok(html.includes('<script defer src="/assets/app.js?v=20261124-security-storage-1"></script>'));
+  assert.ok(html.indexOf('/assets/export-utils.js') < html.indexOf('/assets/app.js'),
+    'shared export utilities must load before the app entry point');
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
