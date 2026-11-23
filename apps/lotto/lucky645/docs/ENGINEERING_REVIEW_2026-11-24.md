@@ -143,3 +143,18 @@ Files:
 - Vercel Preview is READY at https://auto-one-lucky645-fcc0ykjsi-ehdrlf2797-3377.vercel.app
 - An authenticated or full browser smoke test has not been completed. TinyFish read-only smoke test did not start because the connected TinyFish wallet had a negative balance (-$0.312); no paid top-up was performed.
 - PR #32 remains Draft/open/unmerged. Production deployment and Supabase DDL/policy/settings changes were not performed.
+## Account storage and performance follow-up (2026-11-24)
+
+- Extracted account namespace and one-time legacy migration logic into assets/storage-scope.js via a small createAccountStorage API. app.js retains thin wrappers and passes only the account-owned key allowlist and a live user-ID getter.
+- index.html loads storage-scope.js before export-utils.js and app.js. Tests execute the module independently and cover first-account legacy adoption, second-account isolation, local namespace behavior, and failed migration preserving the legacy source.
+- The 1,000,000-draw Monte Carlo sampler now reuses a Uint8Array selection-flag buffer and a six-slot selection buffer instead of allocating one Set per draw. It retains the same seeded RNG call sequence and selection order.
+- A 25,000-draw seeded equivalence test matches number and match histograms exactly against the prior Set-based algorithm.
+- A full 1,000,000-draw CI smoke test passed with 100 progress yields and 6,000,000 total selections. Observed duration was approximately 1,380 ms on the GitHub CI runner; this is not a representative mobile-device benchmark and there is no before/after timing claim.
+
+## Latest verified code commit and CI
+
+- Code/test commit: ccfba4b82a6147b158f0b026b215718305ea025f.
+- GitHub Actions Run #45243742302 passed all 3 jobs: LUCKY 645 API/frontend (including 1,000,000-draw smoke test), Python 3.14 Ubuntu, and Python 3.14 Windows.
+- Vercel Preview is READY at https://auto-one-lucky645-mju97orul-ehdrlf2797-3377.vercel.app
+- Docs/handoff still need a final refresh after this commit; the PR remains Draft/open/unmerged.
+- Mobile-device performance, authenticated browser verification, and browser-level storage quota/rollback testing remain outstanding. No production deployment or Supabase DDL/policy/Auth-setting change was performed.
