@@ -600,7 +600,8 @@ function loadSyncMeta() {
 }
 
 function persistSyncMeta() {
-  try { appStorageSet(SYNC_KEY, JSON.stringify(syncMeta)); } catch (_) {}
+  try { appStorageSet(SYNC_KEY, JSON.stringify(syncMeta)); return true; }
+  catch (_) { return false; }
 }
 
 function formatSyncTime(value) {
@@ -634,7 +635,8 @@ function persistSaved(nextSaved = saved) {
 }
 
 function persistDraws() {
-  try { appStorageSet(CACHE_KEY, JSON.stringify(draws)); } catch (_) {}
+  try { appStorageSet(CACHE_KEY, JSON.stringify(draws)); return true; }
+  catch (_) { return false; }
 }
 
 function toast(message) {
@@ -798,13 +800,19 @@ async function refreshData(showToast = true) {
     }
 
     dataReady = finalAudit.isContinuous;
-    persistDraws();
+    const drawCachePersisted = persistDraws();
+    if(!drawCachePersisted) {
+      errors.push('회차 데이터는 연결했지만 브라우저 캐시에 저장하지 못했습니다. 현재 화면을 닫으면 다시 연결해야 할 수 있습니다.');
+    }
     const syncSucceeded = Boolean(historicalSource || officialLatest || mirrorLatest);
     syncMeta.status = !syncSucceeded ? 'error' : (errors.length || !dataReady ? 'partial' : 'ok');
     syncMeta.lastSuccessAt = syncSucceeded ? new Date().toISOString() : syncMeta.lastSuccessAt;
     syncMeta.source = latestSource;
     syncMeta.errors = errors.slice(0, 12);
-    persistSyncMeta();
+    if(!persistSyncMeta()) {
+      errors.push('동기화 상태 메타데이터를 브라우저에 저장하지 못했습니다.');
+      syncMeta.errors = errors.slice(0,12);
+    }
 
     const statusSource = latestSource || (historicalSource ? '누적 자료' : '저장 데이터');
     if (status) {
@@ -831,7 +839,8 @@ async function refreshData(showToast = true) {
     if (showToast) toast(dataReady ? `${draws.length.toLocaleString()}회차 데이터 연결 완료` : '확보된 데이터로 화면을 갱신했습니다.');
   } catch (error) {
     errors.push(`화면 갱신: ${error.message}`);
-    syncMeta.status = 'error'; syncMeta.errors = errors.slice(0, 12); persistSyncMeta();
+    syncMeta.status = 'error'; syncMeta.errors = errors.slice(0, 12);
+    if(!persistSyncMeta()) errors.push('동기화 상태 메타데이터를 저장하지 못했습니다.');
     if (status) {
       status.textContent = '데이터 연결 확인 필요';
       status.style.color = 'var(--yellow)';

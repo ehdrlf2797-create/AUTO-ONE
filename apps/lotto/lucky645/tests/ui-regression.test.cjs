@@ -1153,3 +1153,31 @@ test('persisted and imported text fields are escaped at their HTML rendering bou
   const cloudStatus=block('function renderCloudSyncStatus() {','\nfunction loadResearchBackups()');
   assert.ok(cloudStatus.includes('escapeHtml(meta.error)'));
 });
+
+
+test('draw cache persistence reports quota failures without turning live refresh data into failure', () => {
+  const start=app.indexOf('function persistDraws() {');
+  const end=app.indexOf('\nfunction toast(',start);
+  assert.ok(start>=0&&end>start);
+  const context={
+    CACHE_KEY:'lucky645_draws_cache_v1',
+    draws:[{round:1}],
+    appStorageSet:(key,value)=>{context.saved=[key,value];}
+  };
+  vm.runInNewContext(app.slice(start,end)+'\nthis.persistDraws=persistDraws;',context);
+  assert.equal(context.persistDraws(),true);
+  assert.equal(context.saved[0],'lucky645_draws_cache_v1');
+  context.appStorageSet=()=>{throw new Error('quota exceeded');};
+  assert.equal(context.persistDraws(),false);
+});
+
+test('refresh diagnostics distinguish live draw readiness from browser cache persistence', () => {
+  const start=app.indexOf('async function refreshData(showToast = true) {');
+  const end=app.indexOf('\nfunction ',start+20);
+  assert.ok(start>=0&&end>start);
+  const refresh=app.slice(start,end);
+  assert.match(refresh,/dataReady = finalAudit\.isContinuous;[\s\S]*?const drawCachePersisted = persistDraws\(\);/);
+  assert.match(refresh,/if\\(!drawCachePersisted\\)\\s*\\{\\s*errors\\.push\\(/);
+  assert.match(refresh,/if\\(!persistSyncMeta\\(\\)\\)/);
+  assert.match(refresh,/status\\.title = \\[.*\\.\\.\\.errors\\]/);
+});
