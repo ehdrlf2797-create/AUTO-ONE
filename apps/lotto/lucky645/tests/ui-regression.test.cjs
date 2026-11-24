@@ -1141,20 +1141,20 @@ test('persisted and imported text fields are escaped at their HTML rendering bou
     assert.ok(start>=0&&end>start,startMarker+' rendering block must be present');
     return app.slice(start,end);
   };
-  const savedReports=block('function renderSavedReports() {','\\nfunction exportSavedCheckHistory()');
-  assert.match(savedReports,/escapeHtml\\(row\\.source\\)/);
-  assert.match(savedReports,/escapeHtml\\(autoCheckMeta\\.lastStatus/);
+  const savedReports=block('function renderSavedReports() {','\nfunction exportSavedCheckHistory()');
+  assert.ok(savedReports.includes('escapeHtml(row.source)'));
+  assert.ok(savedReports.includes('escapeHtml(autoCheckMeta.lastStatus'));
 
-  const pdf=block('function exportSavedPdf() {','\\nfunction requestDrawNotifications()');
-  assert.match(pdf,/escapeHtml\\(row\\.source\\)/);
+  const pdf=block('function exportSavedPdf() {','\nfunction requestDrawNotifications()');
+  assert.ok(pdf.includes('escapeHtml(row.source)'));
 
-  const research=block('function renderResearchResults() {','\\nfunction renderResearchLab()');
-  assert.match(research,/escapeHtml\\(item\\.label\\)/);
-  assert.match(research,/escapeHtml\\(tournament\\.note/);
+  const research=block('function renderResearchResults() {','\nfunction renderResearchLab()');
+  assert.ok(research.includes('escapeHtml(item.label)'));
+  assert.ok(research.includes('escapeHtml(tournament.note'));
 
-  const candidateList=block('function renderResearchLab() {','\\nfunction updateResearchProgress');
-  assert.match(candidateList,/escapeHtml\\(item\\.label\\)/);
+  const candidateList=block('function renderResearchLab() {','\nfunction updateResearchProgress');
+  assert.ok(candidateList.includes('escapeHtml(item.label)'));
 
-  const cloudStatus=block('function renderCloudSyncStatus() {','\\nfunction loadResearchBackups()');
-  assert.match(cloudStatus,/escapeHtml\\(meta\\.error\\)/);
+  const cloudStatus=block('function renderCloudSyncStatus() {','\nfunction loadResearchBackups()');
+  assert.ok(cloudStatus.includes('escapeHtml(meta.error)'));
 });
