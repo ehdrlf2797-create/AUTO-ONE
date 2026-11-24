@@ -1102,3 +1102,59 @@ test('cloud sync commits saved rows, history, metadata and tombstones in one rol
   assert.doesNotMatch(sync,/persistCloudTombstones\(/,
     'the sync apply path must not persist tombstones ahead of the other local records');
 });
+
+
+test('HTML escaping neutralizes hostile persisted text before it reaches dynamic HTML sinks', () => {
+  const start=app.indexOf('const escapeHtml = value =>');
+  const end=app.indexOf('\n',start);
+  assert.ok(start>=0&&end>start,'shared HTML escaper must exist');
+  const context={};
+  vm.runInNewContext(app.slice(start,end)+'\nthis.escapeHtml=escapeHtml;',context);
+
+  const payloads=[
+    '<img src=x onerror=alert(1)>',
+    '\"><svg onload=alert(1)>',
+    '</td><script>alert(1)</script>',
+    \"' autofocus onfocus='alert(1)\",
+    '& already escaped?'
+  ];
+  for(const payload of payloads) {
+    const escaped=context.escapeHtml(payload);
+    assert.ok(!escaped.includes('<img'));
+    assert.ok(!escaped.includes('<svg'));
+    assert.ok(!escaped.includes('<script'));
+    assert.ok(!escaped.includes('</td>'));
+    assert.ok(!escaped.includes(' onerror='));
+    assert.ok(!escaped.includes(' onload='));
+    assert.ok(!escaped.includes(\"' autofocus\"));
+  }
+  assert.equal(
+    context.escapeHtml('<img src=x onerror=alert(1)>'),
+    '&lt;img src=x onerror=alert(1)&gt;'
+  );
+});
+
+test('persisted and imported text fields are escaped at their HTML rendering boundaries', () => {
+  const block=(startMarker,endMarker)=>{
+    const start=app.indexOf(startMarker);
+    const end=app.indexOf(endMarker,start);
+    assert.ok(start>=0&&end>start,startMarker+' rendering block must be present');
+    return app.slice(start,end);
+  };
+  const savedReports=block('function renderSavedReports() {','\\nfunction exportSavedCheckHistory()');
+  assert.match(savedReports,/escapeHtml\\(row\\.source\\)/);
+  assert.match(savedReports,/escapeHtml\\(autoCheckMeta\\.lastStatus/);
+
+  const pdf=block('function exportSavedPdf() {','\\nfunction requestDrawNotifications()');
+  assert.match(pdf,/escapeHtml\\(row\\.source\\)/);
+
+  const research=block('function renderResearchResults() {','\\nfunction renderResearchLab()');
+  assert.match(research,/escapeHtml\\(item\\.label\\)/);
+  assert.match(research,/escapeHtml\\(tournament\\.note/);
+
+  const candidateList=block('function renderResearchLab() {','\\nfunction updateResearchProgress');
+  assert.match(candidateList,/escapeHtml\\(item\\.label\\)/);
+
+  const cloudStatus=block('function renderCloudSyncStatus() {','\\nfunction loadResearchBackups()');
+  assert.match(cloudStatus,/escapeHtml\\(meta\\.error\\)/);
+});
