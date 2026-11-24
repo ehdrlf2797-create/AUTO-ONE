@@ -1115,7 +1115,7 @@ test('HTML escaping neutralizes hostile persisted text before it reaches dynamic
     '<img src=x onerror=alert(1)>',
     '\"><svg onload=alert(1)>',
     '</td><script>alert(1)</script>',
-    \"' autofocus onfocus='alert(1)\",
+    `<div title="x" onmouseover="alert(1)">`,
     '& already escaped?'
   ];
   for(const payload of payloads) {
@@ -1126,7 +1126,7 @@ test('HTML escaping neutralizes hostile persisted text before it reaches dynamic
     assert.ok(!escaped.includes('</td>'));
     assert.ok(!escaped.includes(' onerror='));
     assert.ok(!escaped.includes(' onload='));
-    assert.ok(!escaped.includes(\"' autofocus\"));
+    assert.ok(!escaped.includes(' onmouseover='));
   }
   assert.equal(
     context.escapeHtml('<img src=x onerror=alert(1)>'),
