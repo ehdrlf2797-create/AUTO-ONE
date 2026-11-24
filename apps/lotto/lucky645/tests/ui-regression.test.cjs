@@ -13,18 +13,13 @@ const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
 const exportUtilsSource = fs.readFileSync(path.join(root, 'assets/export-utils.js'), 'utf8');
 const storageScopeSource = fs.readFileSync(path.join(root, 'assets/storage-scope.js'), 'utf8');
 const dataSourceSource = fs.readFileSync(path.join(root, 'assets/data-source.js'), 'utf8');
+const drawDomainSource = fs.readFileSync(path.join(root, 'assets/draw-domain.js'), 'utf8');
 const researchHistorySource = fs.readFileSync(path.join(root, 'assets/research-history.js'), 'utf8');
 
 test('frontend draw normalization preserves official sales and payout without trusting third-party totalSales', () => {
-  const start = app.indexOf('function sortNums(numbers)');
-  const end = app.indexOf('\nfunction extractDraws(json)', start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
   const context = {};
-  vm.runInNewContext(
-    app.slice(start, end) + '\nthis.normalizeDraw = normalizeDraw;',
-    context
-  );
+  vm.runInNewContext(drawDomainSource,context);
+  const {normalizeDraw} = context.Lucky645DataDomain.createDomain();
 
   const base = {
     round: 1250,
@@ -63,14 +58,11 @@ test('frontend draw normalization preserves official sales and payout without tr
 });
 
 test('historical ambiguous totalSales aliases cannot overwrite CSV sales or rank payout', () => {
-  const start = app.indexOf('function sortNums(numbers)');
-  const end = app.indexOf('\nfunction extractDraws(json)', start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
   const context = {};
-  vm.runInNewContext(app.slice(start, end) + '\nthis.normalizeDraw = normalizeDraw;', context);
+  vm.runInNewContext(drawDomainSource,context);
+  const {normalizeDraw} = context.Lucky645DataDomain.createDomain();
 
-  const round289 = context.normalizeDraw({
+  const round289 = normalizeDraw({
     round: 289,
     date: '2008-06-14',
     numbers: [3, 14, 33, 37, 38, 42],
@@ -88,7 +80,7 @@ test('historical ambiguous totalSales aliases cannot overwrite CSV sales or rank
   assert.equal(round289.totalSales, 39406643000);
   assert.equal(round289.totalPrizePayout, 10521658889);
 
-  const round296 = context.normalizeDraw({
+  const round296 = normalizeDraw({
     round: 296,
     date: '2008-08-02',
     numbers: [3, 8, 15, 27, 30, 45],
@@ -108,17 +100,10 @@ test('historical ambiguous totalSales aliases cannot overwrite CSV sales or rank
 });
 
 test('CSV history parser maps total sales and derives complete rank payout totals', () => {
-  const helperStart = app.indexOf('function sortNums(numbers)');
-  const normalizerEnd = app.indexOf('\nfunction extractDraws(json)', helperStart);
-  assert.notEqual(helperStart, -1);
-  assert.notEqual(normalizerEnd, -1);
-
   const context = {};
-  vm.runInNewContext(
-    app.slice(helperStart, normalizerEnd) + '\n' + dataSourceSource,
-    context
-  );
-  const adapter = context.Lucky645DataSource.createAdapter({normalizeDraw:context.normalizeDraw});
+  vm.runInNewContext(drawDomainSource + '\n' + dataSourceSource,context);
+  const {normalizeDraw} = context.Lucky645DataDomain.createDomain();
+  const adapter = context.Lucky645DataSource.createAdapter({normalizeDraw});
   const csv = [
     'drwNo,drwNoDate,n1,n2,n3,n4,n5,n6,bonus,firstWinamnt,firstPrzwnerCo,secondWinamnt,secondPrzwnerCo,thirdWinamnt,thirdPrzwnerCo,fourthWinamnt,fourthPrzwnerCo,fifthWinamnt,fifthPrzwnerCo,totSellamnt',
     '1251,2026-11-21,14,18,19,29,40,45,1,2068843286,14,50284386,96,1693196,2851,50000,146963,5000,2505977,116992886000'
@@ -127,7 +112,7 @@ test('CSV history parser maps total sales and derives complete rank payout total
   assert.equal(draw.totalSales, 116992886000);
   assert.equal(draw.totalPrizePayout, 58496443856);
 
-  const incompleteRanks = context.normalizeDraw({
+  const incompleteRanks = normalizeDraw({
     round: 1251,
     numbers: [14, 18, 19, 29, 40, 45],
     bonus: 1,
@@ -218,22 +203,9 @@ test('data-source CSV parser handles BOM, quoted commas and doubled quotes', () 
 
 
 test('mergeDraws keeps trusted winning numbers and fills missing financial metrics from CSV', () => {
-  const helperStart = app.indexOf('function sortNums(numbers)');
-  const normalizerEnd = app.indexOf('\nfunction extractDraws(json)', helperStart);
-  const mergeStart = app.indexOf('function sourceTrust(source)');
-  const mergeEnd = app.indexOf('\nfunction hasRealDrawData', mergeStart);
-  assert.notEqual(helperStart, -1);
-  assert.notEqual(normalizerEnd, -1);
-  assert.notEqual(mergeStart, -1);
-  assert.notEqual(mergeEnd, -1);
-
   const context = {};
-  vm.runInNewContext(
-    app.slice(helperStart, normalizerEnd) + '\n' +
-    app.slice(mergeStart, mergeEnd) +
-    '\nthis.mergeDraws = mergeDraws;',
-    context
-  );
+  vm.runInNewContext(drawDomainSource,context);
+  const {mergeDraws} = context.Lucky645DataDomain.createDomain();
   const officialNumbers = [14, 18, 19, 29, 40, 45];
   const preferred = {
     round: 1251, date: '2026-11-21', numbers: officialNumbers, bonus: 1,
@@ -248,7 +220,7 @@ test('mergeDraws keeps trusted winning numbers and fills missing financial metri
     rnk4WnAmt: 50000, rnk4WnNope: 146963,
     rnk5WnAmt: 5000, rnk5WnNope: 2505977
   };
-  const [merged] = context.mergeDraws([preferred], [csvBackup]);
+  const [merged] = mergeDraws([preferred], [csvBackup]);
   assert.deepEqual(Array.from(merged.numbers), officialNumbers);
   assert.equal(merged.source, 'GitHub 원본 JSON');
   assert.equal(merged.totalSales, 116992886000);
@@ -973,4 +945,90 @@ test('manual, bulk and simulation saves respect the saved collection limit witho
   assert.match(simulationSave,/persistSaved\(\[\.\.\.entries,\.\.\.saved\]\)/);
   assert.doesNotMatch(simulationSave,/saved\.unshift\(/,
     'simulation ticket save must stage records rather than mutate live state before persistence');
+});
+
+
+test('draw-domain normalizer rejects invalid draws and excludes every duplicate prize rank', () => {
+  const context={};
+  vm.runInNewContext(drawDomainSource,context);
+  const domain=context.Lucky645DataDomain.createDomain();
+  const valid={
+    round:1251,date:'2026-11-21',numbers:[14,18,19,29,40,45],bonus:1,
+    wholEpsdSumNtslAmt:116992886000,
+    ranks:[
+      {rank:1,prize:100,winners:2},{rank:1,prize:999,winners:9},
+      {rank:2,prize:20,winners:3},{rank:3,prize:5,winners:4},
+      {rank:4,prize:4,winners:5},{rank:5,prize:1,winners:6}
+    ]
+  };
+  const draw=domain.normalizeDraw(valid);
+  assert.equal(draw.totalSales,116992886000);
+  assert.equal(draw.totalPrizePayout,null);
+  assert.deepEqual(Array.from(draw.ranks,item=>item.rank),[2,3,4,5]);
+  assert.equal(domain.normalizeDraw({...valid,round:0}),null);
+  assert.equal(domain.normalizeDraw({...valid,numbers:[1,1,2,3,4,5]}),null);
+  assert.equal(domain.normalizeDraw({...valid,bonus:14}),null);
+  assert.equal(domain.normalizeDraw({...valid,date:'2026-02-30'}).date,'');
+});
+
+test('draw-domain extraction normalizes, sorts and drops invalid or duplicate-round records only at merge', () => {
+  const context={};
+  vm.runInNewContext(drawDomainSource,context);
+  const domain=context.Lucky645DataDomain.createDomain();
+  const raw=[
+    {round:3,numbers:[1,2,3,4,5,6],bonus:7,source:'GitHub'},
+    {round:1,numbers:[2,3,4,5,6,7],bonus:8,source:'GitHub'},
+    {round:2,numbers:[3,4,5,6,7,8],bonus:9,source:'GitHub'},
+    {round:0,numbers:[1,2,3,4,5,6],bonus:7}
+  ];
+  const extracted=domain.extractDraws(raw);
+  assert.deepEqual(Array.from(extracted.map(item=>item.round)),[1,2,3]);
+  const merged=domain.mergeDraws(extracted,[{round:2,numbers:[10,11,12,13,14,15],bonus:16,source:'동행복권'}]);
+  assert.deepEqual(Array.from(merged.map(item=>item.round)),[1,2,3]);
+  assert.deepEqual(Array.from(merged[1].numbers),[10,11,12,13,14,15]);
+});
+
+test('draw-domain official endpoint parser selects latest or requested round from nested payloads', () => {
+  const context={};
+  vm.runInNewContext(drawDomainSource,context);
+  const domain=context.Lucky645DataDomain.createDomain();
+  const data={data:{result:{pstLtEpstInfo:{lt645:[
+    {ltEpsd:10,ltRflYmd:'20260101',tm1WnNo:1,tm2WnNo:2,tm3WnNo:3,tm4WnNo:4,tm5WnNo:5,tm6WnNo:6,bnsWnNo:7},
+    {ltEpsd:11,ltRflYmd:'20260108',tm1WnNo:8,tm2WnNo:9,tm3WnNo:10,tm4WnNo:11,tm5WnNo:12,tm6WnNo:13,bnsWnNo:14}
+  ]}}}};
+  assert.equal(domain.normalizeOfficial(data).round,11);
+  assert.equal(domain.normalizeOfficial(data,10).round,10);
+  assert.equal(domain.normalizeOfficial(data,12),null);
+});
+
+test('draw-domain history continuity catches gaps, duplicate rounds and non-one starts', () => {
+  const context={};
+  vm.runInNewContext(drawDomainSource,context);
+  const domain=context.Lucky645DataDomain.createDomain();
+  const base=Array.from({length:5},(_,index)=>({round:index+1}));
+  assert.equal(domain.isContinuousHistory(base),true);
+  assert.equal(domain.isContinuousHistory([base[0],base[1],base[3],base[4]]),false);
+  assert.equal(domain.isContinuousHistory([base[0],base[1],{round:2},base[3],base[4]]),false);
+  assert.equal(domain.isContinuousHistory(base.slice(1)),false);
+  assert.equal(domain.isContinuousHistory([]),false);
+});
+
+test('draw-domain source trust order and merge preserve highest-trust winning numbers while filling null financial fields', () => {
+  const context={};
+  vm.runInNewContext(drawDomainSource,context);
+  const domain=context.Lucky645DataDomain.createDomain();
+  assert.ok(domain.sourceTrust('동행복권 공식 API')>domain.sourceTrust('GitHub 원본 JSON'));
+  assert.ok(domain.sourceTrust('GitHub 원본 JSON')>domain.sourceTrust('CSV 보조 사본'));
+  assert.ok(domain.sourceTrust('CSV 보조 사본')>domain.sourceTrust('저장 데이터'));
+  assert.ok(domain.sourceTrust('저장 데이터')>domain.sourceTrust('기본 표시값'));
+  const official={round:1,numbers:[1,2,3,4,5,6],bonus:7,source:'동행복권 공식 API',totalSales:null,totalPrizePayout:null,
+    ranks:[{rank:1,prize:100,winners:1}]};
+  const github={round:1,numbers:[8,9,10,11,12,13],bonus:14,source:'GitHub 원본 JSON',totalSales:500,totalPrizePayout:250,
+    ranks:[{rank:1,prize:90,winners:2},{rank:2,prize:10,winners:3}]};
+  const [merged]=domain.mergeDraws([github],[official]);
+  assert.deepEqual(Array.from(merged.numbers),official.numbers);
+  assert.equal(merged.source,official.source);
+  assert.equal(merged.totalSales,500);
+  assert.equal(merged.totalPrizePayout,250);
+  assert.deepEqual(Array.from(merged.ranks,item=>[item.rank,item.prize,item.winners]),[[1,100,1],[2,10,3]]);
 });
