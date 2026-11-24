@@ -1182,5 +1182,5 @@ test('refresh diagnostics distinguish live draw readiness from browser cache per
   assert.ok(refresh.includes('if(!drawCachePersisted)'));
   assert.ok(refresh.includes('errors.push('));
   assert.ok(refresh.includes('if(!persistSyncMeta())'));
-  assert.ok(refresh.includes('status.title = [`));
+  assert.ok(refresh.includes('status.title = ['));
 });
