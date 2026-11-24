@@ -105,35 +105,35 @@ state, tests not run, unresolved risks, and actions not performed.
 
 | Item | Status | Evidence | Remaining action |
 |---|---|---|---|
-| Sales/payout field mapping | Implemented and audited across 1,251 rounds | Historical source comparison and regression tests | Maintain source precedence |
-| Duplicate-prize rejection | Implemented in API and frontend normalization | Duplicate-rank regression; Run #45243742302 passed | None known |
-| Account-switch refresh guard | Implemented | Delayed refresh response regression and full CI | Preserve in future auth refactor |
-| CSV formula injection | Fixed and extracted to export-utils.js | Prefix vectors, module/load-order tests; Run #45243742302 passed | None known |
-| Backup restore consistency | Staged multi-key writes with rollback | Success/failure transaction tests; Run #45243742302 passed | Real browser quota test outstanding |
-| Saved data bounds | 10,000 combinations / 50,000 history rows | Import/save/cloud-merge boundary tests | Legacy oversized local storage review |
-| Account storage module | Extracted to storage-scope.js | First-account migration, cross-account isolation and failure-preservation tests | Data-source adapter extraction next |
-| 1,000,000 Monte Carlo path | Reduced per-draw object allocation with typed-array scratch buffers | 25k seeded equivalence; 1M smoke; CI ≈1,380ms | Measure on target mobile devices |
-| HTML sink source review | No executable DOM XSS reproduced in reviewed paths | Source review; not a browser pen test | Authenticated browser testing remains open |
-| Supabase tenant isolation | RLS, policies, grants and indexes inspected read-only | Owner-only authenticated policy set on both tables | Leaked-password protection warning remains |
-| Authenticated browser verification | Not completed | TinyFish execution did not start with wallet balance -$0.312 | Needs available execution balance and user sign-in profile |
-| Merge / production release | Not attempted | PR #32 Draft/open/unmerged | Separate explicit approval required |
+| Sales/payout field mapping | Implemented and audited across 1,251 rounds | Historical source comparison and regression tests | Maintain official source precedence |
+| Duplicate-prize rejection | Implemented in API and frontend normalization | Duplicate-rank regression; Run #45443096100 passed | None known |
+| Account-switch refresh guard | Implemented | Delayed refresh response regression; full CI | Preserve in later auth changes |
+| CSV formula injection | Fixed and extracted to export-utils.js | Prefix vectors and export module tests | None known |
+| Backup restore consistency | Staged multi-key writes with rollback | Commit/rollback tests | Real-browser quota failure test outstanding |
+| Saved data bounds | 10,000 combinations / 50,000 history rows | Import/save/cloud-merge boundary tests | Review old oversized local data with export-first recovery |
+| Account storage module | Extracted to storage-scope.js | First-account migration, isolation, migration-failure tests | None known |
+| Monte Carlo simulation | Typed-array scratch buffers; seeded output preserved | 25k equivalence; 1M smoke; CI ≈1,380ms | Target Android performance not measured |
+| Data-source adapter | Extracted to data-source.js with 16MiB JSON / 8MiB text limits | Source order, request options, timeouts, malformed/oversize responses, CSV edge tests; Run #45443096100 | Live source freshness reconciliation remains a separate operational check |
+| HTML sink source review | No executable DOM XSS reproduced in reviewed paths | Source review only | Authenticated browser penetration testing remains open |
+| Supabase tenant isolation | RLS, policies, grants and indexes inspected read-only | Owner-only authenticated policies on both tables | Leaked-password protection warning remains; no connector setting-write action |
+| Authenticated browser verification | Not completed | TinyFish wallet -$0.312; host web inspection inaccessible | Requires a working authorized browser session |
+| Merge / production release | Not attempted | PR #32 Draft/open/unmerged | Release gate after authenticated verification and full review |
 
 ## Latest verified acceptance evidence
 
-- **CI Run #45243742302** on commit ccfba4b82a6147b158f0b026b215718305ea025f: all 3 jobs passed (LUCKY 645 API/frontend, Python 3.14 Ubuntu, Python 3.14 Windows).
-- The full 1,000,000-draw Monte Carlo smoke test completed in about 1,380 ms on the GitHub CI runner, with exactly 100 progress callbacks and 6,000,000 selections. This is a CI-host result, not a mobile benchmark.
-- **Vercel Preview:** READY — https://auto-one-lucky645-mju97orul-ehdrlf2797-3377.vercel.app
-- Supabase read-only audit: both LUCKY 645 tables have RLS enabled and authenticated owner-only policies; Security Advisor reports leaked-password protection disabled. No DB/Auth changes made.
-- HTML review is source-level only. No authenticated browser smoke or penetration test is claimed.
-- PR #32 remains Draft/open/unmerged; no production deploy, Supabase schema/RLS, or Auth configuration was modified.
+- **CI Run #45443096100** on commit 6ca8be92291a3d794d72bdea704627f96d0ee769: all three jobs passed (LUCKY 645 API/frontend, Python 3.14 Ubuntu, Python 3.14 Windows).
+- **Vercel Preview:** READY — https://auto-one-lucky645-ongse7ae8-ehdrlf2797-3377.vercel.app
+- 16 MiB JSON and 8 MiB text/CSV response caps; Content-Length and decoded body length checks; malformed CSV quote rejection; original source order retained.
+- Supabase RLS remains enabled with authenticated owner-only policies on both LUCKY 645 tables. Security Advisor's leaked-password protection warning remains; official guidance: https://supabase.com/docs/guides/auth/password-security
+- HTML review remains source-level. No browser penetration test or authenticated UI test is claimed.
+- PR #32 remains Draft/open/unmerged. No production deployment or Supabase schema/RLS/Auth-setting mutation was performed.
 
 ## Next concrete actions
 
-1. Extract the LUCKY 645 data-source adapter into its own module while preserving source precedence, official sales-field mapping, timeout/retry behavior, and validation tests.
-2. Benchmark 100-strategy research and the 1,000,000-draw simulation on representative Android devices; use reproducible seeded fixtures and profile memory as well as time.
-3. Review legacy oversized localStorage records and define a no-data-loss recovery/export path before enforcing a storage byte budget.
-4. Continue HTML sink review using persisted/imported HTML-like fixtures; keep authenticated browser testing as a distinct release gate.
-5. Repeat full CI and Preview checks after each bounded change.
-6. Keep authenticated sign-in testing, merge, production deployment and Supabase mutations outside autonomous scope unless separately authorized.
+1. Add a deterministic historical-feed integrity smoke test for continuous rounds, duplicate IDs/rounds, field presence and latest-round reconciliation, using locally stored fixtures rather than live external dependencies.
+2. Extract draw normalization and trust-ranked merge logic as a separate pure module, preserving official sales/payout mapping and duplicate-rank rejection.
+3. Measure 100-strategy research and the 1,000,000-draw simulation on representative Android devices; profile time and memory with reproducible seeds.
+4. Review legacy oversized localStorage records and define an export-first, no-data-loss recovery path before adding a byte budget.
+5. Keep authenticated browser verification, merge, production deploy and Supabase Auth setting changes as separately evidenced release gates; the current connector has no Auth-setting write action.
 
 [Explore Plan & Ship in Codelit](https://codelit.io/plan-and-ship)

@@ -158,3 +158,19 @@ Files:
 - Vercel Preview is READY at https://auto-one-lucky645-mju97orul-ehdrlf2797-3377.vercel.app
 - Docs/handoff still need a final refresh after this commit; the PR remains Draft/open/unmerged.
 - Mobile-device performance, authenticated browser verification, and browser-level storage quota/rollback testing remain outstanding. No production deployment or Supabase DDL/policy/Auth-setting change was performed.
+## Data-source adapter extraction and input hardening (2026-11-25)
+
+- Extracted source endpoints, JSON/text HTTP transport, local-proxy-unavailable classification, and CSV parsing into assets/data-source.js. The app consumes it through window.Lucky645DataSource.createAdapter({normalizeDraw}); index.html loads the module before app.js.
+- Canonical data-source order remains unchanged: cumulative Vercel proxy, GitHub raw JSON, GitHub Pages JSON; latest official proxy then official endpoint; public latest mirror only when official lookup is unavailable; CSV is used as a history/financial enrichment fallback.
+- The adapter uses CORS, credentials=omit, cache=no-store, AbortController timeouts, HTTP status checks, and HTML/invalid-JSON rejection.
+- JSON response limit is 16 MiB; text/CSV limit is 8 MiB. Content-Length is checked before consuming the body where the header is available, and the decoded string length is checked afterward.
+- CSV parsing rejects an unterminated quoted field instead of silently accepting a malformed row. UTF-8 BOM, quoted commas, and doubled quotes are covered by tests.
+- Regression coverage: source endpoint contract/order, app script load order, timeout cleanup, fetch security options, HTTP error, HTML response, malformed JSON, oversized declared body, CSV BOM/quotes and unterminated quote.
+
+## Latest data-source code verification
+
+- **CI Run #45443096100** on commit 6ca8be92291a3d794d72bdea704627f96d0ee769: LUCKY 645 API/UI, Python 3.14 Ubuntu, and Python 3.14 Windows all passed.
+- **Preview READY:** https://auto-one-lucky645-ongse7ae8-ehdrlf2797-3377.vercel.app
+- The immediately preceding source-priority/script-order commit e4ea43610237d9d0bd7493afaace181e6fafaa0e also passed all 3 CI jobs in Run #45442749842.
+- Authenticated visual/browser penetration testing remains incomplete. TinyFish execution could not start with a -$0.312 wallet balance and no credit top-up was made. Direct web page inspection also failed at the host, so neither is counted as a browser test.
+- Supabase Security Advisor's leaked-password protection warning remains. Official Supabase documentation states the setting is configured in Auth settings and is available on Pro and above. The connected Supabase tools expose read/audit and database operations but no Auth security-setting update action; no setting change was attempted.
