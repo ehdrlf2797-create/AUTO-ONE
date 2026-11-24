@@ -1,6 +1,8 @@
 (function (root) {
   'use strict';
 
+  const LIMITS = Object.freeze({maxJsonChars:16*1024*1024,maxTextChars:8*1024*1024});
+
   const ENDPOINTS = Object.freeze({
     history: Object.freeze([
       '/api/lotto?type=all',
@@ -21,6 +23,23 @@
     const setTimer = options.setTimeout || root.setTimeout?.bind(root);
     const clearTimer = options.clearTimeout || root.clearTimeout?.bind(root);
     const normalizeDraw = options.normalizeDraw;
+    const maxJsonChars = Number.isSafeInteger(options.maxJsonChars) && options.maxJsonChars > 0
+      ? options.maxJsonChars : LIMITS.maxJsonChars;
+    const maxTextChars = Number.isSafeInteger(options.maxTextChars) && options.maxTextChars > 0
+      ? options.maxTextChars : LIMITS.maxTextChars;
+
+    function readLimitedText(response, maxChars, label) {
+      const contentLength = response.headers?.get?.('content-length');
+      const declaredLength = contentLength == null || String(contentLength).trim() === ''
+        ? NaN : Number(contentLength);
+      if (Number.isFinite(declaredLength) && declaredLength > maxChars) {
+        throw new Error(label + ' 응답 크기가 허용 한도를 초과했습니다.');
+      }
+      return response.text().then(body => {
+        if (body.length > maxChars) throw new Error(label + ' 응답 크기가 허용 한도를 초과했습니다.');
+        return body;
+      });
+    }
 
     function startRequest(timeout) {
       if (typeof fetchImpl !== 'function') throw new TypeError('A fetch implementation is required.');
@@ -45,7 +64,7 @@
         });
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const type = response.headers?.get?.('content-type') || '';
-        const body = await response.text();
+        const body = await readLimitedText(response,maxJsonChars,'JSON');
         if (type.includes('text/html') || body.trimStart().startsWith('<')) {
           throw new Error('JSON이 아닌 웹페이지가 반환됐습니다.');
         }
@@ -75,7 +94,7 @@
           signal: controller.signal
         });
         if (!response.ok) throw new Error('HTTP ' + response.status);
-        return await response.text();
+        return await readLimitedText(response,maxTextChars,'텍스트');
       } finally {
         clearTimer(timer);
       }
@@ -95,6 +114,7 @@
           value = '';
         } else value += character;
       }
+      if (quoted) throw new Error('CSV 따옴표가 닫히지 않았습니다.');
       cells.push(value.trim());
       return cells;
     }
@@ -120,5 +140,5 @@
     return Object.freeze({getJson,getText,isUnavailableLocalProxy,parseCsv,parseCsvLine});
   }
 
-  root.Lucky645DataSource = Object.freeze({ENDPOINTS,createAdapter});
+  root.Lucky645DataSource = Object.freeze({ENDPOINTS,LIMITS,createAdapter});
 })(typeof window !== 'undefined' ? window : globalThis);

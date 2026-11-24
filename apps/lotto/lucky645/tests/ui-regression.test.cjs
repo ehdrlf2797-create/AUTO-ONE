@@ -167,6 +167,11 @@ test('data-source adapter enforces fetch options, timeout cleanup and response v
       if (url.endsWith('/text')) return {
         ok:true,status:200,headers:{get:()=> 'text/csv'},text:async()=>'round,date\n1,2026-01-01'
       };
+      if (url.endsWith('/large-json') || url.endsWith('/large-text')) return {
+        ok:true,status:200,
+        headers:{get:name=>name==='content-length'?'65':(url.endsWith('/large-json')?'application/json':'text/plain')},
+        text:async()=>{throw new Error('response text should not be read when Content-Length exceeds the limit');}
+      };
       return {
         ok:true,status:200,headers:{get:()=> 'application/json; charset=utf-8'},text:async()=>'{"ok":true}'
       };
@@ -176,7 +181,7 @@ test('data-source adapter enforces fetch options, timeout cleanup and response v
     clearTimeout:id=>cleared.push(id)
   };
   vm.runInNewContext(dataSourceSource,context);
-  const adapter=context.Lucky645DataSource.createAdapter();
+  const adapter=context.Lucky645DataSource.createAdapter({maxJsonChars:64,maxTextChars:64});
   assert.deepEqual(JSON.parse(JSON.stringify(await adapter.getJson('/ok',321))),{ok:true});
   assert.equal(await adapter.getText('/text',654),'round,date\n1,2026-01-01');
   const firstFetch = calls.find(call=>call.url==='/ok');
@@ -189,6 +194,8 @@ test('data-source adapter enforces fetch options, timeout cleanup and response v
   await assert.rejects(adapter.getJson('/html'),/JSON이 아닌 웹페이지/);
   await assert.rejects(adapter.getJson('/bad-json'),/JSON 형식이 올바르지 않습니다/);
   await assert.rejects(adapter.getJson('/failure'),/HTTP 503/);
+  await assert.rejects(adapter.getJson('/large-json'),/JSON 응답 크기가 허용 한도를 초과/);
+  await assert.rejects(adapter.getText('/large-text'),/텍스트 응답 크기가 허용 한도를 초과/);
   assert.equal(adapter.isUnavailableLocalProxy('/api/lotto?type=all',new Error('HTTP 404')),true);
   assert.equal(adapter.isUnavailableLocalProxy('https://example.invalid',new Error('HTTP 404')),false);
 });
@@ -204,6 +211,9 @@ test('data-source CSV parser handles BOM, quoted commas and doubled quotes', () 
     Array.from(parsed,item=>[item.round,item.label,item.detail]),
     [[1,'Gamma','plain'],[2,'Alpha, Beta','say "yes"']]
   );
+  assert.throws(()=>adapter.parseCsv('round,label\n1,"unterminated'),/CSV 따옴표가 닫히지 않았습니다/);
+  assert.equal(context.Lucky645DataSource.LIMITS.maxJsonChars,16*1024*1024);
+  assert.equal(context.Lucky645DataSource.LIMITS.maxTextChars,8*1024*1024);
 });
 
 
