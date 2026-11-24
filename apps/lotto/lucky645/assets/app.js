@@ -2158,7 +2158,7 @@ async function importSavedBackup(file) {
     assertAccountScope(importOwner,importGeneration);
     const filePayload = JSON.parse(fileText);
     if(filePayload?.schema==='lucky645-local-recovery-v1') {
-      const archive=raw.storage;
+      const archive=filePayload.storage;
       if(!archive||typeof archive.saved!=='string'||typeof archive.savedCheckHistory!=='string'||typeof archive.autoCheckMeta!=='string') {
         throw new Error('전체 복구 백업 형식이 올바르지 않습니다.');
       }
