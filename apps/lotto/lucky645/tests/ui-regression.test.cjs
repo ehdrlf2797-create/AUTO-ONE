@@ -12,6 +12,7 @@ const css = fs.readFileSync(path.join(root, 'assets/app.css'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'assets/app.js'), 'utf8');
 const exportUtilsSource = fs.readFileSync(path.join(root, 'assets/export-utils.js'), 'utf8');
 const storageScopeSource = fs.readFileSync(path.join(root, 'assets/storage-scope.js'), 'utf8');
+const dataSourceSource = fs.readFileSync(path.join(root, 'assets/data-source.js'), 'utf8');
 const researchHistorySource = fs.readFileSync(path.join(root, 'assets/research-history.js'), 'utf8');
 
 test('frontend draw normalization preserves official sales and payout without trusting third-party totalSales', () => {
@@ -109,25 +110,20 @@ test('historical ambiguous totalSales aliases cannot overwrite CSV sales or rank
 test('CSV history parser maps total sales and derives complete rank payout totals', () => {
   const helperStart = app.indexOf('function sortNums(numbers)');
   const normalizerEnd = app.indexOf('\nfunction extractDraws(json)', helperStart);
-  const csvStart = app.indexOf('function parseCsvLine(line)');
-  const csvEnd = app.indexOf('\n\nasync function refreshData', csvStart);
   assert.notEqual(helperStart, -1);
   assert.notEqual(normalizerEnd, -1);
-  assert.notEqual(csvStart, -1);
-  assert.notEqual(csvEnd, -1);
 
   const context = {};
   vm.runInNewContext(
-    app.slice(helperStart, normalizerEnd) + '\n' +
-    app.slice(csvStart, csvEnd) +
-    '\nthis.parseCsv = parseCsv;',
+    app.slice(helperStart, normalizerEnd) + '\n' + dataSourceSource,
     context
   );
+  const adapter = context.Lucky645DataSource.createAdapter({normalizeDraw:context.normalizeDraw});
   const csv = [
     'drwNo,drwNoDate,n1,n2,n3,n4,n5,n6,bonus,firstWinamnt,firstPrzwnerCo,secondWinamnt,secondPrzwnerCo,thirdWinamnt,thirdPrzwnerCo,fourthWinamnt,fourthPrzwnerCo,fifthWinamnt,fifthPrzwnerCo,totSellamnt',
     '1251,2026-11-21,14,18,19,29,40,45,1,2068843286,14,50284386,96,1693196,2851,50000,146963,5000,2505977,116992886000'
   ].join('\n');
-  const [draw] = context.parseCsv(csv);
+  const [draw] = adapter.parseCsv(csv);
   assert.equal(draw.totalSales, 116992886000);
   assert.equal(draw.totalPrizePayout, 58496443856);
 
@@ -145,9 +141,70 @@ test('CSV history parser maps total sales and derives complete rank payout total
     ]
   });
   assert.equal(incompleteRanks.totalPrizePayout, null);
-  assert.deepEqual(Array.from(incompleteRanks.ranks, item => item.rank), [2,3,4,5],
-    'all occurrences of a duplicate rank must be excluded from frontend payout data');
+  assert.deepEqual(Array.from(incompleteRanks.ranks, item => item.rank), [2,3,4,5]);
 });
+
+test('data-source adapter enforces fetch options, timeout cleanup and response validation', async () => {
+  const calls = [];
+  const cleared = [];
+  let nextTimer = 0;
+  class FakeAbortController {
+    constructor(){ this.signal={aborted:false}; }
+    abort(){ this.signal.aborted=true; }
+  }
+  const context = {
+    fetch:async (url,options) => {
+      calls.push({url,options});
+      if (url.endsWith('/html')) return {
+        ok:true,headers:{get:()=> 'text/html'},text:async()=>'<html>login</html>'
+      };
+      if (url.endsWith('/bad-json')) return {
+        ok:true,headers:{get:()=> 'application/json'},text:async()=>'{"broken":'
+      };
+      if (url.endsWith('/failure')) return {
+        ok:false,status:503,headers:{get:()=> 'application/json'},text:async()=>'unavailable'
+      };
+      if (url.endsWith('/text')) return {
+        ok:true,status:200,headers:{get:()=> 'text/csv'},text:async()=>'round,date\n1,2026-01-01'
+      };
+      return {
+        ok:true,status:200,headers:{get:()=> 'application/json; charset=utf-8'},text:async()=>'{"ok":true}'
+      };
+    },
+    AbortController:FakeAbortController,
+    setTimeout:(callback,delay)=>{const id=++nextTimer;calls.push({timer:id,delay,callback});return id;},
+    clearTimeout:id=>cleared.push(id)
+  };
+  vm.runInNewContext(dataSourceSource,context);
+  const adapter=context.Lucky645DataSource.createAdapter();
+  assert.deepEqual(JSON.parse(JSON.stringify(await adapter.getJson('/ok',321))),{ok:true});
+  assert.equal(await adapter.getText('/text',654),'round,date\n1,2026-01-01');
+  assert.equal(calls[0].url,'/ok');
+  assert.equal(calls[0].options.credentials,'omit');
+  assert.equal(calls[0].options.cache,'no-store');
+  assert.equal(calls[0].options.mode,'cors');
+  assert.equal(calls[0].options.headers.Accept,'application/json');
+  assert.deepEqual(cleared,[1,2]);
+  await assert.rejects(adapter.getJson('/html'),/JSON이 아닌 웹페이지/);
+  await assert.rejects(adapter.getJson('/bad-json'),/JSON 형식이 올바르지 않습니다/);
+  await assert.rejects(adapter.getJson('/failure'),/HTTP 503/);
+  assert.equal(adapter.isUnavailableLocalProxy('/api/lotto?type=all',new Error('HTTP 404')),true);
+  assert.equal(adapter.isUnavailableLocalProxy('https://example.invalid',new Error('HTTP 404')),false);
+});
+
+test('data-source CSV parser handles BOM, quoted commas and doubled quotes', () => {
+  const context = {};
+  vm.runInNewContext(dataSourceSource,context);
+  const adapter = context.Lucky645DataSource.createAdapter({
+    normalizeDraw:raw=>({round:Number(raw.round),label:raw.label,detail:raw.detail})
+  });
+  const parsed=adapter.parseCsv('\uFEFFround,label,detail\n2,"Alpha, Beta","say ""yes"""\n1,Gamma,plain');
+  assert.deepEqual(
+    Array.from(parsed,item=>[item.round,item.label,item.detail]),
+    [[1,'Gamma','plain'],[2,'Alpha, Beta','say "yes"']]
+  );
+});
+
 
 test('mergeDraws keeps trusted winning numbers and fills missing financial metrics from CSV', () => {
   const helperStart = app.indexOf('function sortNums(numbers)');

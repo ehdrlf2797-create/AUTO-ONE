@@ -16,17 +16,17 @@ const FALLBACK_DRAW = {
 };
 
 // 누적 회차 데이터 사본과 동행복권 최신 회차 API를 함께 사용합니다.
-const API_ALL_SOURCES = [
-  '/api/lotto?type=all',
-  'https://raw.githubusercontent.com/visionary153/lotto-api/main/results/all.json',
-  'https://visionary153.github.io/lotto-api/results/all.json'
-];
-const API_PROXY_LATEST = '/api/lotto?type=latest';
-const API_LATEST = 'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do';
-const API_LATEST_FALLBACK = 'https://raw.githubusercontent.com/visionary153/lotto-api/main/results/latest.json';
-const API_PROXY_BATCH = '/api/lotto?type=round';
-const API_BATCH = 'https://www.dhlottery.co.kr/lt645/selectPstLt645InfoNew.do';
-const CSV_FALLBACK = 'https://cashlogy.kr/lotto/excel.csv';
+const DATA_SOURCE_ENDPOINTS = window.Lucky645DataSource.ENDPOINTS;
+const API_ALL_SOURCES = DATA_SOURCE_ENDPOINTS.history;
+const API_PROXY_LATEST = DATA_SOURCE_ENDPOINTS.latestProxy;
+const API_LATEST = DATA_SOURCE_ENDPOINTS.officialLatest;
+const API_LATEST_FALLBACK = DATA_SOURCE_ENDPOINTS.latestMirror;
+const API_PROXY_BATCH = DATA_SOURCE_ENDPOINTS.roundProxy;
+const API_BATCH = DATA_SOURCE_ENDPOINTS.officialRound;
+const CSV_FALLBACK = DATA_SOURCE_ENDPOINTS.csvHistory;
+const dataSourceAdapter = window.Lucky645DataSource.createAdapter({ normalizeDraw });
+const { getJson, getText, isUnavailableLocalProxy, parseCsv } = dataSourceAdapter;
+
 const CACHE_KEY = 'lucky645_draws_cache_v1';
 const SAVED_KEY = 'lucky645_saved';
 const SYNC_KEY = 'lucky645_sync_meta_v1';
@@ -812,68 +812,6 @@ function mergeDraws(base, incoming) {
 function hasRealDrawData(list) {
   return Array.isArray(list) && list.some(draw => draw && draw.source !== FALLBACK_DRAW.source);
 }
-
-async function getJson(url, timeout = 12000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store', signal: controller.signal, headers: { 'Accept': 'application/json' } });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const type = response.headers.get('content-type') || '';
-    const body = await response.text();
-    if (type.includes('text/html') || body.trimStart().startsWith('<')) throw new Error('JSON이 아닌 웹페이지가 반환됐습니다.');
-    try { return JSON.parse(body); } catch (_) { throw new Error('JSON 형식이 올바르지 않습니다.'); }
-  } finally { clearTimeout(timer); }
-}
-
-function isUnavailableLocalProxy(url, error) {
-  if (!String(url).startsWith('/api/')) return false;
-  const message = String(error?.message || '');
-  return /HTTP 404|Failed to parse URL|Invalid URL|relative URL/i.test(message);
-}
-
-async function getText(url, timeout = 12000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store', signal: controller.signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.text();
-  } finally { clearTimeout(timer); }
-}
-
-function parseCsvLine(line) {
-  const cells = [];
-  let value = '';
-  let quoted = false;
-  for (let index = 0; index < line.length; index++) {
-    const character = line[index];
-    if (character === '"') {
-      if (quoted && line[index + 1] === '"') { value += '"'; index++; }
-      else quoted = !quoted;
-    } else if (character === ',' && !quoted) {
-      cells.push(value.trim()); value = '';
-    } else value += character;
-  }
-  cells.push(value.trim());
-  return cells;
-}
-
-function parseCsv(text) {
-  const lines = String(text || '').replace(/^\uFEFF/, '').trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]).map(s=>s.trim());
-  const rows = [];
-  for (const line of lines.slice(1)) {
-    if (!line.trim()) continue;
-    const cells = parseCsvLine(line);
-    const raw = Object.fromEntries(headers.map((header,index)=>[header,(cells[index]||'').trim()]));
-    const draw = normalizeDraw(raw);
-    if (draw) rows.push(draw);
-  }
-  return rows.sort((a,b)=>a.round-b.round);
-}
-
 
 async function refreshData(showToast = true) {
   if (isRefreshing) return;
