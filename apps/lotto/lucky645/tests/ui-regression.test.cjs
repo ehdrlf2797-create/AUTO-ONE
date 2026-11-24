@@ -293,12 +293,41 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
   assert.deepEqual(missing, [], 'all literal app.js DOM lookups must exist in index.html');
 });
 
-test('static assets use explicit cache-busting versions and load shared utilities first', () => {
+test('static assets use explicit cache versions and load shared modules before app.js', () => {
   assert.ok(html.includes('<link rel="stylesheet" href="/assets/app.css?v=20261123-sales-payout-ui-1" />'));
+  assert.ok(html.includes('<script defer src="/assets/storage-scope.js?v=20261124-storage-scope-1"></script>'));
   assert.ok(html.includes('<script defer src="/assets/export-utils.js?v=20261124-export-utils-1"></script>'));
+  assert.ok(html.includes('<script defer src="/assets/data-source.js?v=20261125-data-source-1"></script>'));
   assert.ok(html.includes('<script defer src="/assets/app.js?v=20261125-data-source-1"></script>'));
-  assert.ok(html.indexOf('/assets/export-utils.js') < html.indexOf('/assets/app.js'),
-    'shared export utilities must load before the app entry point');
+  for (const modulePath of ['/assets/storage-scope.js','/assets/export-utils.js','/assets/data-source.js']) {
+    assert.ok(html.indexOf(modulePath) < html.indexOf('/assets/app.js'),
+      modulePath+' must load before the app entry point');
+  }
+});
+
+test('data-source adapter retains the canonical source and fallback endpoint contract', () => {
+  const context = {};
+  vm.runInNewContext(dataSourceSource,context);
+  const endpoints=context.Lucky645DataSource.ENDPOINTS;
+  assert.deepEqual(Array.from(endpoints.history),[
+    '/api/lotto?type=all',
+    'https://raw.githubusercontent.com/visionary153/lotto-api/main/results/all.json',
+    'https://visionary153.github.io/lotto-api/results/all.json'
+  ]);
+  assert.equal(endpoints.latestProxy,'/api/lotto?type=latest');
+  assert.equal(endpoints.officialLatest,'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do');
+  assert.equal(endpoints.latestMirror,'https://raw.githubusercontent.com/visionary153/lotto-api/main/results/latest.json');
+  assert.equal(endpoints.roundProxy,'/api/lotto?type=round');
+  assert.equal(endpoints.officialRound,'https://www.dhlottery.co.kr/lt645/selectPstLt645InfoNew.do');
+  assert.equal(endpoints.csvHistory,'https://cashlogy.kr/lotto/excel.csv');
+
+  const start=app.indexOf('async function refreshData(showToast = true)');
+  const end=app.indexOf('\nfunction ',start);
+  const refresh=app.slice(start,end>start?end:app.length);
+  assert.match(refresh,/for \(const sourceUrl of API_ALL_SOURCES\)/);
+  assert.match(refresh,/for \(const endpoint of \[API_PROXY_LATEST, API_LATEST\]\)/);
+  assert.match(refresh,/if \(!officialLatest\)[\s\S]*?API_LATEST_FALLBACK/);
+  assert.match(refresh,/getText\(CSV_FALLBACK, 10000\)/);
 });
 
 test('deployment adds clickjacking and cross-domain policy protection', () => {
