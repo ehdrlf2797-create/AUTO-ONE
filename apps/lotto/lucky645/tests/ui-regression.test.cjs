@@ -179,11 +179,12 @@ test('data-source adapter enforces fetch options, timeout cleanup and response v
   const adapter=context.Lucky645DataSource.createAdapter();
   assert.deepEqual(JSON.parse(JSON.stringify(await adapter.getJson('/ok',321))),{ok:true});
   assert.equal(await adapter.getText('/text',654),'round,date\n1,2026-01-01');
-  assert.equal(calls[0].url,'/ok');
-  assert.equal(calls[0].options.credentials,'omit');
-  assert.equal(calls[0].options.cache,'no-store');
-  assert.equal(calls[0].options.mode,'cors');
-  assert.equal(calls[0].options.headers.Accept,'application/json');
+  const firstFetch = calls.find(call=>call.url==='/ok');
+  assert.ok(firstFetch,'the JSON endpoint must be requested');
+  assert.equal(firstFetch.options.credentials,'omit');
+  assert.equal(firstFetch.options.cache,'no-store');
+  assert.equal(firstFetch.options.mode,'cors');
+  assert.equal(firstFetch.options.headers.Accept,'application/json');
   assert.deepEqual(cleared,[1,2]);
   await assert.rejects(adapter.getJson('/html'),/JSON이 아닌 웹페이지/);
   await assert.rejects(adapter.getJson('/bad-json'),/JSON 형식이 올바르지 않습니다/);
@@ -295,7 +296,7 @@ test('HTML element IDs are unique and every app.js DOM lookup exists', () => {
 test('static assets use explicit cache-busting versions and load shared utilities first', () => {
   assert.ok(html.includes('<link rel="stylesheet" href="/assets/app.css?v=20261123-sales-payout-ui-1" />'));
   assert.ok(html.includes('<script defer src="/assets/export-utils.js?v=20261124-export-utils-1"></script>'));
-  assert.ok(html.includes('<script defer src="/assets/app.js?v=20261124-security-storage-1"></script>'));
+  assert.ok(html.includes('<script defer src="/assets/app.js?v=20261125-data-source-1"></script>'));
   assert.ok(html.indexOf('/assets/export-utils.js') < html.indexOf('/assets/app.js'),
     'shared export utilities must load before the app entry point');
 });

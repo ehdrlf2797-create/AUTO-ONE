@@ -22,15 +22,19 @@
     const clearTimer = options.clearTimeout || root.clearTimeout?.bind(root);
     const normalizeDraw = options.normalizeDraw;
 
-    if (typeof fetchImpl !== 'function') throw new TypeError('A fetch implementation is required.');
-    if (typeof AbortControllerImpl !== 'function') throw new TypeError('AbortController is required.');
-    if (typeof setTimer !== 'function' || typeof clearTimer !== 'function') {
-      throw new TypeError('Timer functions are required.');
+    function startRequest(timeout) {
+      if (typeof fetchImpl !== 'function') throw new TypeError('A fetch implementation is required.');
+      if (typeof AbortControllerImpl !== 'function') throw new TypeError('AbortController is required.');
+      if (typeof setTimer !== 'function' || typeof clearTimer !== 'function') {
+        throw new TypeError('Timer functions are required.');
+      }
+      const controller = new AbortControllerImpl();
+      const timer = setTimer(() => controller.abort(), timeout);
+      return {controller,timer};
     }
 
     async function getJson(url, timeout = 12000) {
-      const controller = new AbortControllerImpl();
-      const timer = setTimer(() => controller.abort(), timeout);
+      const {controller,timer} = startRequest(timeout);
       try {
         const response = await fetchImpl(url, {
           mode: 'cors',
@@ -62,8 +66,7 @@
     }
 
     async function getText(url, timeout = 12000) {
-      const controller = new AbortControllerImpl();
-      const timer = setTimer(() => controller.abort(), timeout);
+      const {controller,timer} = startRequest(timeout);
       try {
         const response = await fetchImpl(url, {
           mode: 'cors',
