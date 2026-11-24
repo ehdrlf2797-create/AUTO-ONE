@@ -267,7 +267,27 @@ function loadAutoCheckMeta() {
 
 function persistSavedCheckHistory() {
   try {
-    appStorageSet(SAVED_CHECKS_KEY, JSON.stringify(savedCheckHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY)));
+    const storedRaw=appStorageGet(SAVED_CHECKS_KEY)||'[]';
+    const stored=JSON.parse(storedRaw);
+    let nextHistory;
+    if(Array.isArray(stored)&&stored.length>MAX_SAVED_BACKUP_CHECK_HISTORY) {
+      // Preserve the complete archived prefix and apply in-memory edits to loaded rows.
+      // Append new rows instead of truncating any legacy records beyond the visible window.
+      const pending=new Map(savedCheckHistory.map(row=>[String(row.id||row.round+':'+row.savedId),row]));
+      const retained=stored.map(row=>{
+        const normalized=normalizeSavedCheckRecord(row);
+        if(!normalized)return row;
+        const key=String(normalized.id||normalized.round+':'+normalized.savedId);
+        const edited=pending.get(key);
+        if(!edited)return row;
+        pending.delete(key);
+        return edited;
+      });
+      nextHistory=[...retained,...pending.values()];
+    } else {
+      nextHistory=savedCheckHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY);
+    }
+    appStorageSet(SAVED_CHECKS_KEY, JSON.stringify(nextHistory));
     if (!cloudApplying) scheduleCloudSync();
     return true;
   } catch (_) {
@@ -2072,17 +2092,32 @@ function toggleSavedFavorite(index) {
   toast(saved[index].favorite ? '즐겨찾기에 추가했습니다.' : '즐겨찾기에서 해제했습니다.');
 }
 
-function exportSavedBackup() {
-  if (!saved.length && !savedCheckHistory.length) return toast('백업할 저장 번호 또는 확인 이력이 없습니다.');
-  const payload = { app: 'LUCKY 645', version: 2, exportedAt: new Date().toISOString(), saved, savedCheckHistory, autoCheckMeta };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url; link.download = `lucky645-backup-${new Date().toISOString().slice(0,10)}.json`;
-  document.body.appendChild(link); link.click(); link.remove(); setTimeout(()=>URL.revokeObjectURL(url), 1000);
-  toast('번호 보관함 백업 파일을 저장했습니다.');
+function buildSavedRecoveryArchive() {
+  return {
+    schema:'lucky645-local-recovery-v1',
+    app:'LUCKY 645',
+    version:1,
+    exportedAt:new Date().toISOString(),
+    storage:{
+      saved:appStorageGet(SAVED_KEY)||'[]',
+      savedCheckHistory:appStorageGet(SAVED_CHECKS_KEY)||'[]',
+      autoCheckMeta:appStorageGet(AUTO_CHECK_KEY)||'{}'
+    }
+  };
 }
 
+function exportSavedBackup() {
+  const archive=buildSavedRecoveryArchive();
+  const hasSaved=archive.storage.saved!=='[]';
+  const hasHistory=archive.storage.savedCheckHistory!=='[]';
+  if(!hasSaved&&!hasHistory) return toast('백업할 저장 번호 또는 확인 이력이 없습니다.');
+  const blob=new Blob([JSON.stringify(archive,null,2)],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;link.download='lucky645-full-recovery-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('전체 복구 백업을 저장했습니다. 표시 중인 최근 이력뿐 아니라 브라우저 원본 저장 기록을 포함합니다.');
+}
 function writeStorageTransaction(entries) {
   if (!Array.isArray(entries) || entries.some(entry => !Array.isArray(entry) || entry.length !== 2)) {
     throw new Error('저장 작업 형식이 올바르지 않습니다.');
@@ -2121,6 +2156,46 @@ async function importSavedBackup(file) {
   try {
     const fileText=await file.text();
     assertAccountScope(importOwner,importGeneration);
+    const raw = JSON.parse(fileText);
+    if(raw?.schema==='lucky645-local-recovery-v1') {
+      const archive=raw.storage;
+      if(!archive||typeof archive.saved!=='string'||typeof archive.savedCheckHistory!=='string'||typeof archive.autoCheckMeta!=='string') {
+        throw new Error('전체 복구 백업 형식이 올바르지 않습니다.');
+      }
+      const archiveSaved=JSON.parse(archive.saved);
+      const archiveHistory=JSON.parse(archive.savedCheckHistory);
+      const archiveMeta=JSON.parse(archive.autoCheckMeta);
+      if(!Array.isArray(archiveSaved)||!Array.isArray(archiveHistory)||
+         !archiveMeta||typeof archiveMeta!=='object'||Array.isArray(archiveMeta)) {
+        throw new Error('전체 복구 백업의 저장 데이터 구조가 올바르지 않습니다.');
+      }
+      const normalizedSaved=archiveSaved.map(normalizeSavedEntry);
+      const normalizedHistory=archiveHistory.map(normalizeSavedCheckRecord);
+      if(normalizedSaved.some(item=>!item)||normalizedHistory.some(item=>!item)) {
+        throw new Error('전체 복구 백업에 유효하지 않은 저장 기록이 있어 복원을 중단했습니다. 원본 파일은 변경되지 않았습니다.');
+      }
+      if(!confirm('전체 복구 백업에는 표시 제한을 넘는 과거 확인 이력도 포함될 수 있습니다. 현재 계정의 번호 보관함·확인 이력·자동 확인 기준을 백업 내용으로 교체합니다. 먼저 현재 데이터를 별도로 내보냈는지 확인한 뒤 계속할까요?')) return;
+      assertAccountScope(importOwner,importGeneration);
+      const restoredMeta={
+        lastRound:Number.isInteger(Number(archiveMeta.lastRound))&&Number(archiveMeta.lastRound)>0?Number(archiveMeta.lastRound):0,
+        lastCheckedAt:typeof archiveMeta.lastCheckedAt==='string'?archiveMeta.lastCheckedAt:'',
+        lastStatus:typeof archiveMeta.lastStatus==='string'?archiveMeta.lastStatus.slice(0,40):'대기'
+      };
+      writeStorageTransaction([
+        [SAVED_KEY,JSON.stringify(normalizedSaved)],
+        [SAVED_CHECKS_KEY,JSON.stringify(normalizedHistory)],
+        [AUTO_CHECK_KEY,JSON.stringify(restoredMeta)]
+      ]);
+      saved=normalizedSaved;
+      savedCheckHistory=normalizedHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY);
+      autoCheckMeta=restoredMeta;
+      renderSaved();
+      updateTopStats();
+      renderSavedReports();
+      if(savedBacktestResult)runSavedBacktest();
+      toast('전체 복구 백업을 복원했습니다. 보관함 '+formatNumber(saved.length)+'개, 전체 확인 이력 '+formatNumber(normalizedHistory.length)+'건을 저장했습니다.');
+      return;
+    }
     const raw = JSON.parse(fileText);
     const rows = Array.isArray(raw) ? raw : raw?.saved;
     const importedHistoryRows = Array.isArray(raw?.savedCheckHistory) ? raw.savedCheckHistory : [];

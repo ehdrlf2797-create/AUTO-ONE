@@ -1225,3 +1225,65 @@ test('common saved persistence guard blocks growth past the cap but allows legac
   assert.equal(writes,2);
   assert.equal(JSON.parse(storedValue).length,10000);
 });
+
+
+test('full recovery archive exports raw saved and complete history storage instead of the 50k display window', () => {
+  const start=app.indexOf('function buildSavedRecoveryArchive()');
+  const end=app.indexOf('\nfunction exportSavedBackup()',start);
+  assert.ok(start>=0&&end>start);
+  const rawSaved=JSON.stringify([{id:'saved-1',numbers:[1,2,3,4,5,6]}]);
+  const rawHistory=JSON.stringify(Array.from({length:50003},(_,index)=>({id:'history-'+index,round:index+1})));
+  const rawMeta=JSON.stringify({lastRound:1251,lastStatus:'완료'});
+  const context={
+    SAVED_KEY:'saved',SAVED_CHECKS_KEY:'history',AUTO_CHECK_KEY:'meta',
+    appStorageGet:key=>({saved:rawSaved,history:rawHistory,meta:rawMeta})[key],
+    Date
+  };
+  vm.runInNewContext(app.slice(start,end)+'\nthis.buildSavedRecoveryArchive=buildSavedRecoveryArchive;',context);
+  const archive=context.buildSavedRecoveryArchive();
+  assert.equal(archive.schema,'lucky645-local-recovery-v1');
+  assert.equal(archive.storage.saved,rawSaved);
+  assert.equal(archive.storage.savedCheckHistory,rawHistory);
+  assert.equal(JSON.parse(archive.storage.savedCheckHistory).length,50003);
+  assert.equal(archive.storage.autoCheckMeta,rawMeta);
+  assert.doesNotMatch(JSON.stringify(archive),/access_token|refresh_token|sb_publishable_/i,
+    'recovery archive must not contain Supabase credentials or auth tokens');
+});
+
+test('large legacy check history is preserved when new records are persisted', () => {
+  const start=app.indexOf('function persistSavedCheckHistory()');
+  const end=app.indexOf('\nfunction persistAutoCheckMeta()',start);
+  assert.ok(start>=0&&end>start);
+  const stored=Array.from({length:50002},(_,index)=>({id:'row-'+index,round:index+1,savedId:'saved-'+index}));
+  const added={id:'new-row',round:50003,savedId:'saved-new'};
+  let written=null;
+  const context={
+    SAVED_CHECKS_KEY:'history',
+    MAX_SAVED_BACKUP_CHECK_HISTORY:50000,
+    savedCheckHistory:[stored.at(-1),added],
+    cloudApplying:true,
+    appStorageGet:()=>JSON.stringify(stored),
+    appStorageSet:(key,value)=>{written=JSON.parse(value);},
+    normalizeSavedCheckRecord:item=>item
+  };
+  vm.runInNewContext(app.slice(start,end)+'\nthis.persistSavedCheckHistory=persistSavedCheckHistory;',context);
+  assert.equal(context.persistSavedCheckHistory(),true);
+  assert.equal(written.length,50003);
+  assert.equal(written[0].id,'row-0');
+  assert.equal(written[50001].id,'row-50001');
+  assert.equal(written.at(-1).id,'new-row');
+});
+
+test('full recovery archive restore validates every record, confirms replacement, and writes all keys transactionally', () => {
+  const start=app.indexOf('async function importSavedBackup(file)');
+  const end=app.indexOf('\nfunction modeLabel(mode)',start);
+  const importer=app.slice(start,end);
+  assert.match(importer,/schema==='lucky645-local-recovery-v1'/);
+  assert.match(importer,/normalizedSaved\.some\(item=>!item\)\|\|normalizedHistory\.some\(item=>!item\)/);
+  assert.match(importer,/if\(!confirm\(/);
+  assert.match(importer,/writeStorageTransaction\(\[/);
+  assert.ok(importer.includes('[SAVED_KEY,JSON.stringify(normalizedSaved)]'));
+  assert.ok(importer.includes('[SAVED_CHECKS_KEY,JSON.stringify(normalizedHistory)]'));
+  assert.ok(importer.includes('[AUTO_CHECK_KEY,JSON.stringify(restoredMeta)]'));
+  assert.ok(importer.includes('savedCheckHistory=normalizedHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY)'));
+});
