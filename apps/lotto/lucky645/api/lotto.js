@@ -90,7 +90,29 @@ function normalizeDraw(raw) {
     }).filter(item => item.prize !== null || item.winners !== null);
   }
 
-  const rawSales = asInteger(raw.totalSales ?? raw.wholEpsdSumNtslAmt);
+  // Duplicate rank rows are ambiguous. Exclude every occurrence of a duplicated
+  // rank so an apparently complete 1st–5th set cannot produce a false payout.
+  const rankCounts = new Map();
+  for (const item of ranks) {
+    rankCounts.set(item.rank, (rankCounts.get(item.rank) || 0) + 1);
+  }
+  ranks = ranks.filter(item => rankCounts.get(item.rank) === 1);
+
+  // Only the official whole-episode sales field is authoritative for sales.
+  // Third-party mirrors may misuse `totalSales` for prize payouts; never trust it here.
+  const rawSales = asInteger(raw.wholEpsdSumNtslAmt);
+  const rawPrizePayout = asInteger(raw.rlvtEpsdSumNtslAmt ?? raw.totalPrizePayout);
+  // Prefer the official aggregate. If a source omits it, derive the payout only
+  // when all five ranks have both a valid per-winner prize and winner count.
+  let totalPrizePayout = rawPrizePayout !== null && rawPrizePayout >= 0 ? rawPrizePayout : null;
+  if (totalPrizePayout === null) {
+    const ranksByNumber = new Map(ranks.map(item => [item.rank, item]));
+    const completeRanks = [1, 2, 3, 4, 5].map(rank => ranksByNumber.get(rank));
+    if (completeRanks.every(item => item && item.prize !== null && item.winners !== null)) {
+      const derivedPayout = completeRanks.reduce((sum, item) => sum + item.prize * item.winners, 0);
+      if (Number.isSafeInteger(derivedPayout)) totalPrizePayout = derivedPayout;
+    }
+  }
   return {
     round,
     date,
@@ -98,6 +120,7 @@ function normalizeDraw(raw) {
     bonus,
     ranks,
     totalSales: rawSales !== null && rawSales >= 0 ? rawSales : null,
+    totalPrizePayout,
     source: typeof raw.source === 'string' ? raw.source : undefined
   };
 }
@@ -218,7 +241,8 @@ function officialCompatibleDraw(draw) {
     numbers: draw.numbers,
     bonus: draw.bonus,
     ranks: draw.ranks,
-    totalSales: draw.totalSales
+    totalSales: draw.totalSales,
+    totalPrizePayout: draw.totalPrizePayout
   };
 }
 

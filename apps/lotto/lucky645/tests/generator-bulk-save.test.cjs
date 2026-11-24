@@ -111,6 +111,7 @@ test('persistSaved is atomic when browser storage is full', () => {
   assert.notEqual(persistEnd, -1);
   const context = {
     SAVED_KEY: 'saved-key',
+    MAX_SAVED_ENTRIES: 10000,
     saved: [{ id: 'existing' }],
     localStorage: { getItem() { return null; }, setItem() { throw new Error('quota exceeded'); }, removeItem() {} },
     appStorageGet: key => context.localStorage.getItem(key),
@@ -141,6 +142,7 @@ test('persistSaved commits the entire collection with one successful storage wri
   const storage = { getItem() { return null; }, setItem(key, value) { writes.push([key, value]); }, removeItem() {} };
   const context = {
     SAVED_KEY: 'saved-key',
+    MAX_SAVED_ENTRIES: 10000,
     saved: [{ id: 'existing' }],
     localStorage: storage,
     appStorageGet: key => storage.getItem(key),

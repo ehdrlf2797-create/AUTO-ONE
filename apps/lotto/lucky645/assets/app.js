@@ -16,17 +16,26 @@ const FALLBACK_DRAW = {
 };
 
 // 누적 회차 데이터 사본과 동행복권 최신 회차 API를 함께 사용합니다.
-const API_ALL_SOURCES = [
-  '/api/lotto?type=all',
-  'https://raw.githubusercontent.com/visionary153/lotto-api/main/results/all.json',
-  'https://visionary153.github.io/lotto-api/results/all.json'
-];
-const API_PROXY_LATEST = '/api/lotto?type=latest';
-const API_LATEST = 'https://www.dhlottery.co.kr/lt645/selectPstLt645Info.do';
-const API_LATEST_FALLBACK = 'https://raw.githubusercontent.com/visionary153/lotto-api/main/results/latest.json';
-const API_PROXY_BATCH = '/api/lotto?type=round';
-const API_BATCH = 'https://www.dhlottery.co.kr/lt645/selectPstLt645InfoNew.do';
-const CSV_FALLBACK = 'https://cashlogy.kr/lotto/excel.csv';
+const drawDomain = window.Lucky645DataDomain.createDomain();
+const {
+  normalizeDraw,
+  extractDraws,
+  normalizeOfficial,
+  isContinuousHistory,
+  sourceTrust,
+  mergeDraws
+} = drawDomain;
+const DATA_SOURCE_ENDPOINTS = window.Lucky645DataSource.ENDPOINTS;
+const API_ALL_SOURCES = DATA_SOURCE_ENDPOINTS.history;
+const API_PROXY_LATEST = DATA_SOURCE_ENDPOINTS.latestProxy;
+const API_LATEST = DATA_SOURCE_ENDPOINTS.officialLatest;
+const API_LATEST_FALLBACK = DATA_SOURCE_ENDPOINTS.latestMirror;
+const API_PROXY_BATCH = DATA_SOURCE_ENDPOINTS.roundProxy;
+const API_BATCH = DATA_SOURCE_ENDPOINTS.officialRound;
+const CSV_FALLBACK = DATA_SOURCE_ENDPOINTS.csvHistory;
+const dataSourceAdapter = window.Lucky645DataSource.createAdapter({ normalizeDraw });
+const { getJson, getText, isUnavailableLocalProxy, parseCsv } = dataSourceAdapter;
+
 const CACHE_KEY = 'lucky645_draws_cache_v1';
 const SAVED_KEY = 'lucky645_saved';
 const SYNC_KEY = 'lucky645_sync_meta_v1';
@@ -39,6 +48,9 @@ const MAX_RESEARCH_HISTORY = 12;
 const MAX_SIMULATION_HISTORY = 20;
 const AUTO_CHECK_KEY = 'lucky645_auto_check_meta_v1';
 const MAX_BACKUP_FILE_SIZE = 12 * 1024 * 1024;
+const MAX_SAVED_ENTRIES = 10000;
+const MAX_SAVED_BACKUP_ENTRIES = MAX_SAVED_ENTRIES;
+const MAX_SAVED_BACKUP_CHECK_HISTORY = 50000;
 const SUPABASE_URL = 'https://absljxjxrrhmswhpthol.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_OPEj3uNdx3wX7r9C6KDuuA_IuyeTD9p';
 const CLOUD_TOMBSTONES_KEY = 'lucky645_cloud_tombstones_v1';
@@ -48,56 +60,31 @@ const RESEARCH_BACKUPS_KEY = 'lucky645_research_backups_v1';
 const MAX_RESEARCH_BACKUPS = 5;
 let cloudSession = loadCloudSession();
 
-const ACCOUNT_SCOPED_KEYS = new Set([
-  SAVED_KEY, SAVED_CHECKS_KEY, AUTO_CHECK_KEY, SIMULATION_HISTORY_KEY,
-  RESEARCH_REPORT_KEY, RESEARCH_HISTORY_KEY, RESEARCH_CANDIDATES_KEY,
-  CLOUD_SYNC_META_KEY
-]);
 const ACCOUNT_SCOPE_SEEN_KEY = 'lucky645_account_scope_seen_v1';
-function accountScopedStorageKey(key, userId) {
-  if(!ACCOUNT_SCOPED_KEYS.has(key))return key;
-  const owner=userId||cloudSession?.user?.id||'local';
-  return key+'::'+String(owner);
+const accountStorage = window.Lucky645Storage.createAccountStorage({
+  storage: localStorage,
+  scopedKeys: [
+    SAVED_KEY, SAVED_CHECKS_KEY, AUTO_CHECK_KEY, SIMULATION_HISTORY_KEY,
+    RESEARCH_REPORT_KEY, RESEARCH_HISTORY_KEY, RESEARCH_CANDIDATES_KEY,
+    CLOUD_SYNC_META_KEY
+  ],
+  seenKey: ACCOUNT_SCOPE_SEEN_KEY,
+  getCurrentUserId: () => cloudSession?.user?.id
+});
+function accountScopedStorageKey(key,userId) {
+  return accountStorage.key(key,userId);
 }
 function activateAccountStorageScope(userId) {
-  if (!userId) return false;
-  let seen=[];
-  try {
-    const parsed=JSON.parse(localStorage.getItem(ACCOUNT_SCOPE_SEEN_KEY)||'[]');
-    if(Array.isArray(parsed))seen=parsed.filter(value=>typeof value==='string');
-  } catch (_) {}
-  if(seen.includes(String(userId))) return false;
-  // Only the first account may adopt legacy anonymous data. Once any account has
-  // been used, a different account starts with its own empty namespace.
-  if(seen.length===0) {
-    let migrationSucceeded=true;
-    for(const key of ACCOUNT_SCOPED_KEYS) {
-      const target=accountScopedStorageKey(key,String(userId));
-      try {
-        if(localStorage.getItem(target)===null) {
-          const legacy=localStorage.getItem(key);
-          if(legacy!==null) localStorage.setItem(target,legacy);
-        }
-        localStorage.removeItem(key);
-      } catch (_) {
-        migrationSucceeded=false;
-        // Keep the legacy value if the scoped copy cannot be written.
-      }
-    }
-    if(!migrationSucceeded)return false;
-  }
-  seen.push(String(userId));
-  try { localStorage.setItem(ACCOUNT_SCOPE_SEEN_KEY,JSON.stringify([...new Set(seen)])); } catch (_) {}
-  return true;
+  return accountStorage.activate(userId);
 }
 function appStorageGet(key) {
-  return localStorage.getItem(accountScopedStorageKey(key));
+  return accountStorage.get(key);
 }
 function appStorageSet(key,value) {
-  return localStorage.setItem(accountScopedStorageKey(key),value);
+  return accountStorage.set(key,value);
 }
 function appStorageRemove(key) {
-  return localStorage.removeItem(accountScopedStorageKey(key));
+  return accountStorage.remove(key);
 }
 activateAccountStorageScope(cloudSession?.user?.id);
 let cloudSessionGeneration = 0;
@@ -148,6 +135,7 @@ let isRefreshing = false;
 const $ = id => document.getElementById(id);
 const formatNumber = n => Number(n || 0).toLocaleString('ko-KR');
 const money = n => `${formatNumber(n)}원`;
+const formatDrawMoney = value => value != null && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? money(Number(value)) : '자료 없음';
 const escapeHtml = value => String(value).replace(/[&<>\"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[character]));
 
 function normalizeSyncTimestamp(value) {
@@ -178,7 +166,7 @@ function normalizeSimulationProfile(item,index=0) {
 function loadSimulationProfiles() {
   try {
     const raw=JSON.parse(appStorageGet(SIMULATION_HISTORY_KEY)||'[]');
-    return Array.isArray(raw)?raw.map(normalizeSimulationProfile).filter(Boolean).slice(0,MAX_SIMULATION_HISTORY):[];
+    return Array.isArray(raw)?raw.slice(0,MAX_SIMULATION_HISTORY).map(normalizeSimulationProfile).filter(Boolean):[];
   } catch (_) { return []; }
 }
 
@@ -194,9 +182,28 @@ function persistSimulationProfiles(nextProfiles) {
 }
 
 
+function validateSavedBackupLimits(savedRows, historyRows) {
+  if (!Array.isArray(savedRows)) throw new Error('저장 번호 목록이 올바르지 않습니다.');
+  if (savedRows.length > MAX_SAVED_BACKUP_ENTRIES) {
+    throw new Error(`저장 조합은 한 번에 최대 ${formatNumber(MAX_SAVED_BACKUP_ENTRIES)}개까지 가져올 수 있습니다.`);
+  }
+  if (Array.isArray(historyRows) && historyRows.length > MAX_SAVED_BACKUP_CHECK_HISTORY) {
+    throw new Error(`확인 이력은 한 번에 최대 ${formatNumber(MAX_SAVED_BACKUP_CHECK_HISTORY)}건까지 가져올 수 있습니다.`);
+  }
+}
+
+function assertSavedCollectionCapacity(savedCount, historyCount) {
+  if (savedCount > MAX_SAVED_ENTRIES) {
+    throw new Error('번호 보관함은 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개까지 저장할 수 있습니다.');
+  }
+  if (historyCount > MAX_SAVED_BACKUP_CHECK_HISTORY) {
+    throw new Error('당첨 확인 이력은 최대 '+formatNumber(MAX_SAVED_BACKUP_CHECK_HISTORY)+'건까지 저장할 수 있습니다.');
+  }
+}
+
 function normalizeSavedEntry(entry, index = 0) {
   if (!entry || typeof entry !== 'object' || !Array.isArray(entry.numbers)) return null;
-  const numbers = entry.numbers.map(Number);
+  const numbers = entry.numbers.length === 6 ? entry.numbers.map(Number) : [];
   if (numbers.length !== 6 || new Set(numbers).size !== 6 || numbers.some(number => !Number.isInteger(number) || number < 1 || number > 45)) return null;
   return {
     id: String(entry.id || `restored-${index}`).slice(0, 100),
@@ -219,7 +226,7 @@ function loadSaved() {
 function normalizeSavedCheckRecord(item) {
   if (!item || typeof item !== 'object') return null;
   const round = Number(item.round);
-  const numbers = Array.isArray(item.numbers) ? item.numbers.map(Number) : [];
+  const numbers = Array.isArray(item.numbers) && item.numbers.length === 6 ? item.numbers.map(Number) : [];
   const matches = Number(item.matches);
   const rank = String(item.rank || '낙첨');
   if (!Number.isInteger(round) || round < 1 || !Number.isInteger(matches) || matches < 0 || matches > 6 ||
@@ -229,7 +236,7 @@ function normalizeSavedCheckRecord(item) {
     id: String(item.id || `${round}-${item.savedId || ''}`).slice(0,120),
     savedId: String(item.savedId || '').slice(0,100),
     numbers: sortNums(numbers), round, date: typeof item.date === 'string' ? item.date.slice(0,20) : '',
-    matches, bonusMatch: Boolean(item.bonusMatch), rank, winningNumbers: Array.isArray(item.winningNumbers) ? item.winningNumbers.map(Number).filter(n=>Number.isInteger(n)&&n>=1&&n<=45).slice(0,6) : [],
+    matches, bonusMatch: Boolean(item.bonusMatch), rank, winningNumbers: Array.isArray(item.winningNumbers) ? item.winningNumbers.slice(0,6).map(Number).filter(n=>Number.isInteger(n)&&n>=1&&n<=45) : [],
     bonus: Number.isInteger(Number(item.bonus)) ? Number(item.bonus) : null,
     checkedAt: typeof item.checkedAt === 'string' ? item.checkedAt.slice(0,40) : '',
     source: typeof item.source === 'string' ? item.source.slice(0,40) : '확인',
@@ -238,8 +245,16 @@ function normalizeSavedCheckRecord(item) {
 }
 
 function loadSavedCheckHistory() {
-  try { const raw = JSON.parse(appStorageGet(SAVED_CHECKS_KEY) || '[]'); return Array.isArray(raw) ? raw.map(normalizeSavedCheckRecord).filter(Boolean).slice(-50000) : []; }
-  catch (_) { return []; }
+  try {
+    const raw = JSON.parse(appStorageGet(SAVED_CHECKS_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    const normalized = [];
+    for (let index=raw.length-1; index>=0 && normalized.length<MAX_SAVED_BACKUP_CHECK_HISTORY; index--) {
+      const record = normalizeSavedCheckRecord(raw[index]);
+      if (record) normalized.push(record);
+    }
+    return normalized.reverse();
+  } catch (_) { return []; }
 }
 
 function loadAutoCheckMeta() {
@@ -252,7 +267,27 @@ function loadAutoCheckMeta() {
 
 function persistSavedCheckHistory() {
   try {
-    appStorageSet(SAVED_CHECKS_KEY, JSON.stringify(savedCheckHistory.slice(-50000)));
+    const storedRaw=appStorageGet(SAVED_CHECKS_KEY)||'[]';
+    const stored=JSON.parse(storedRaw);
+    let nextHistory;
+    if(Array.isArray(stored)&&stored.length>MAX_SAVED_BACKUP_CHECK_HISTORY) {
+      // Preserve the complete archived prefix and apply in-memory edits to loaded rows.
+      // Append new rows instead of truncating any legacy records beyond the visible window.
+      const pending=new Map(savedCheckHistory.map(row=>[String(row.id||row.round+':'+row.savedId),row]));
+      const retained=stored.map(row=>{
+        const normalized=normalizeSavedCheckRecord(row);
+        if(!normalized)return row;
+        const key=String(normalized.id||normalized.round+':'+normalized.savedId);
+        const edited=pending.get(key);
+        if(!edited)return row;
+        pending.delete(key);
+        return edited;
+      });
+      nextHistory=[...retained,...pending.values()];
+    } else {
+      nextHistory=savedCheckHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY);
+    }
+    appStorageSet(SAVED_CHECKS_KEY, JSON.stringify(nextHistory));
     if (!cloudApplying) scheduleCloudSync();
     return true;
   } catch (_) {
@@ -442,7 +477,7 @@ function exportSavedCheckHistory() {
   if (!savedCheckHistory.length) return toast('내보낼 당첨 확인 이력이 없습니다.');
   const rows=[['회차','추첨일','저장ID','번호','일치개수','보너스일치','등수','확인시각','확인방식']];
   savedCheckHistory.forEach(row=>rows.push([row.round,row.date,row.savedId,row.numbers.join(' '),row.matches,row.bonusMatch?'Y':'N',row.rank,row.checkedAt,row.source]));
-  const csv='\uFEFF'+rows.map(row=>row.map(value=>`"${String(value??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const csv='\uFEFF'+rows.map(row=>row.map(window.Lucky645ExportUtils.csvCell).join(',')).join('\r\n');
   const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); const a=document.createElement('a'); a.href=url; a.download=`lucky645-check-history-${new Date().toISOString().slice(0,10)}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); toast('당첨 확인 이력 CSV를 저장했습니다.');
 }
 
@@ -585,7 +620,8 @@ function loadSyncMeta() {
 }
 
 function persistSyncMeta() {
-  try { appStorageSet(SYNC_KEY, JSON.stringify(syncMeta)); } catch (_) {}
+  try { appStorageSet(SYNC_KEY, JSON.stringify(syncMeta)); return true; }
+  catch (_) { return false; }
 }
 
 function formatSyncTime(value) {
@@ -604,6 +640,11 @@ function loadCachedDraws() {
 
 function persistSaved(nextSaved = saved) {
   const next = Array.isArray(nextSaved) ? nextSaved : saved;
+  // Keep existing oversized legacy collections editable/deletable, but never grow them.
+  if (next.length > MAX_SAVED_ENTRIES && next.length > saved.length) {
+    toast('번호 보관함이 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개를 초과한 상태입니다. 기존 조합을 삭제하거나 백업한 뒤 추가해 주세요.');
+    return false;
+  }
   try {
     appStorageSet(SAVED_KEY, JSON.stringify(next));
   } catch (_) {
@@ -619,7 +660,8 @@ function persistSaved(nextSaved = saved) {
 }
 
 function persistDraws() {
-  try { appStorageSet(CACHE_KEY, JSON.stringify(draws)); } catch (_) {}
+  try { appStorageSet(CACHE_KEY, JSON.stringify(draws)); return true; }
+  catch (_) { return false; }
 }
 
 function toast(message) {
@@ -645,176 +687,23 @@ function ball(number, small = false, bonus = false) {
 
 function sortNums(numbers) { return [...numbers].sort((a,b)=>a-b); }
 
-function normalizeDraw(raw) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const nums = raw.numbers ?? raw.winNumbers ?? [
-    raw.tm1WnNo ?? raw.n1 ?? raw.drwtNo1,
-    raw.tm2WnNo ?? raw.n2 ?? raw.drwtNo2,
-    raw.tm3WnNo ?? raw.n3 ?? raw.drwtNo3,
-    raw.tm4WnNo ?? raw.n4 ?? raw.drwtNo4,
-    raw.tm5WnNo ?? raw.n5 ?? raw.drwtNo5,
-    raw.tm6WnNo ?? raw.n6 ?? raw.drwtNo6
-  ];
-  const round = Number(raw.round ?? raw.draw_no ?? raw.ltEpsd ?? raw.drwNo);
-  const numbers = Array.isArray(nums) ? nums.map(Number) : [];
-  const bonus = Number(raw.bonus ?? raw.bonus_no ?? raw.bnsWnNo ?? raw.bnusNo);
-  if (!Number.isSafeInteger(round) || round < 1 || numbers.length !== 6 || new Set(numbers).size !== 6 ||
-      numbers.some(number => !Number.isInteger(number) || number < 1 || number > 45) ||
-      !Number.isInteger(bonus) || bonus < 1 || bonus > 45 || numbers.includes(bonus)) return null;
-
-  let ranks = raw.ranks || raw.divisions;
-  if (Array.isArray(ranks)) {
-    ranks = ranks.map(item => {
-      const prizeValue = item?.prize ?? item?.amount;
-      const winnerValue = item?.winners ?? item?.winnerCount;
-      return {
-        rank: Number(item?.rank),
-        prize: prizeValue == null || prizeValue === '' || !Number.isFinite(Number(prizeValue)) ? null : Number(prizeValue),
-        winners: winnerValue == null || winnerValue === '' || !Number.isFinite(Number(winnerValue)) ? null : Number(winnerValue)
-      };
-    }).filter(item => Number.isInteger(item.rank) && item.rank >= 1 && item.rank <= 5);
-  } else {
-    ranks = [1,2,3,4,5].map(rank => {
-      const prizeValue = raw[`rnk${rank}WnAmt`] ?? raw[['first','second','third','fourth','fifth'][rank-1]+'Winamnt'];
-      const winnerValue = raw[`rnk${rank}WnNope`] ?? raw[['first','second','third','fourth','fifth'][rank-1]+'PrzwnerCo'];
-      return {
-        rank,
-        prize: prizeValue == null || prizeValue === '' ? null : Number(prizeValue),
-        winners: winnerValue == null || winnerValue === '' ? null : Number(winnerValue)
-      };
-    }).filter(item => Number.isFinite(item.prize) || Number.isFinite(item.winners));
-  }
-  ranks = ranks.map(item => ({
-    rank: item.rank,
-    prize: Number.isFinite(item.prize) && item.prize >= 0 ? item.prize : null,
-    winners: Number.isFinite(item.winners) && item.winners >= 0 ? item.winners : null
-  }));
-
-  const dateRaw = String(raw.date ?? raw.ltRflYmd ?? raw.drwNoDate ?? '').trim();
-  let date = '';
-  if (/^\d{8}$/.test(dateRaw)) date = `${dateRaw.slice(0,4)}-${dateRaw.slice(4,6)}-${dateRaw.slice(6,8)}`;
-  else if (/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) date = dateRaw;
-  if (date) { const parsed = new Date(`${date}T00:00:00Z`); if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0,10) !== date) date = ''; }
-  return {
-    round,
-    date,
-    numbers: sortNums(numbers),
-    bonus,
-    ranks,
-    source: typeof raw.source === 'string' ? raw.source.slice(0, 80) : '공개 회차 데이터'
-  };
-}
-
-function extractDraws(json) {
-  let rows = Array.isArray(json) ? json : (json?.results || json?.data?.list || json?.list || json?.data || []);
-  if (!Array.isArray(rows) && rows && typeof rows === 'object') rows = Object.values(rows);
-  return Array.isArray(rows) ? rows.map(normalizeDraw).filter(Boolean).sort((a,b)=>a.round-b.round) : [];
-}
-
-function normalizeOfficial(raw, wantedRound = null) {
-  const list = raw?.data?.list || raw?.data?.result?.pstLtEpstInfo?.lt645 || raw?.list;
-  if (Array.isArray(list)) {
-    const sorted = [...list].sort((a,b)=>Number(b.ltEpsd ?? b.round)-Number(a.ltEpsd ?? a.round));
-    const selected = wantedRound == null ? sorted[0] : list.find(item=>Number(item.ltEpsd ?? item.round)===Number(wantedRound));
-    return normalizeDraw(selected);
-  }
-  return normalizeDraw(raw?.data || raw);
-}
-
-function isContinuousHistory(list) {
-  if (!Array.isArray(list) || !list.length) return false;
-  const sorted = [...list].sort((a,b)=>a.round-b.round);
-  if (sorted[0].round !== 1 || sorted.length !== sorted[sorted.length-1].round) return false;
-  for (let index=0; index<sorted.length; index++) if (sorted[index].round !== index+1) return false;
-  return true;
-}
-
-function sourceTrust(source) {
-  const label = String(source || '');
-  if (label.includes('동행복권')) return 50;
-  if (label.includes('GitHub') || label.includes('공개 최신')) return 25;
-  if (label.includes('CSV')) return 15;
-  if (label.includes('저장')) return 10;
-  if (label.includes('기본 표시값')) return 0;
-  return 20;
-}
-
-function mergeDraws(base, incoming) {
-  const map = new Map();
-  for (const item of [...(Array.isArray(base)?base:[]), ...(Array.isArray(incoming)?incoming:[])]) {
-    const draw = item?.round && item?.numbers ? normalizeDraw(item) : null;
-    if (!draw) continue;
-    const current = map.get(draw.round);
-    if (!current || sourceTrust(draw.source) >= sourceTrust(current.source)) map.set(draw.round, draw);
-  }
-  return [...map.values()].sort((a,b)=>a.round-b.round);
-}
 
 function hasRealDrawData(list) {
   return Array.isArray(list) && list.some(draw => draw && draw.source !== FALLBACK_DRAW.source);
 }
 
-async function getJson(url, timeout = 12000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store', signal: controller.signal, headers: { 'Accept': 'application/json' } });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const type = response.headers.get('content-type') || '';
-    const body = await response.text();
-    if (type.includes('text/html') || body.trimStart().startsWith('<')) throw new Error('JSON이 아닌 웹페이지가 반환됐습니다.');
-    try { return JSON.parse(body); } catch (_) { throw new Error('JSON 형식이 올바르지 않습니다.'); }
-  } finally { clearTimeout(timer); }
-}
-
-function isUnavailableLocalProxy(url, error) {
-  if (!String(url).startsWith('/api/')) return false;
-  const message = String(error?.message || '');
-  return /HTTP 404|Failed to parse URL|Invalid URL|relative URL/i.test(message);
-}
-
-async function getText(url, timeout = 12000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store', signal: controller.signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.text();
-  } finally { clearTimeout(timer); }
-}
-
-function parseCsvLine(line) {
-  const cells = [];
-  let value = '';
-  let quoted = false;
-  for (let index = 0; index < line.length; index++) {
-    const character = line[index];
-    if (character === '"') {
-      if (quoted && line[index + 1] === '"') { value += '"'; index++; }
-      else quoted = !quoted;
-    } else if (character === ',' && !quoted) {
-      cells.push(value.trim()); value = '';
-    } else value += character;
+function summarizeHistoryAudit(audit) {
+  const issues=[];
+  if(audit.invalidRowCount) issues.push('유효하지 않은 행 '+formatNumber(audit.invalidRowCount)+'개');
+  if(audit.duplicateRounds.length) issues.push('중복 회차 '+audit.duplicateRounds.slice(0,5).join(', ')+(audit.duplicateRounds.length>5?' 외 '+(audit.duplicateRounds.length-5)+'개':''));
+  if(audit.missingRoundCount) {
+    const ranges=audit.missingRanges.slice(0,4).map(range=>range.from===range.to?String(range.from):range.from+'~'+range.to);
+    issues.push('누락 회차 '+formatNumber(audit.missingRoundCount)+'개 ('+ranges.join(', ')+(audit.missingRanges.length>4?', …':'')+')');
   }
-  cells.push(value.trim());
-  return cells;
+  if(audit.missingSalesRounds.length) issues.push('판매액 누락 '+formatNumber(audit.missingSalesRounds.length)+'회');
+  if(audit.missingPayoutRounds.length) issues.push('총 당첨금 누락 '+formatNumber(audit.missingPayoutRounds.length)+'회');
+  return issues.length?issues.join(' · '):'행·회차 정합성 이상 없음';
 }
-
-function parseCsv(text) {
-  const lines = String(text || '').replace(/^\uFEFF/, '').trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]).map(s=>s.trim());
-  const rows = [];
-  for (const line of lines.slice(1)) {
-    if (!line.trim()) continue;
-    const cells = parseCsvLine(line);
-    const raw = Object.fromEntries(headers.map((header,index)=>[header,(cells[index]||'').trim()]));
-    const draw = normalizeDraw(raw);
-    if (draw) rows.push(draw);
-  }
-  return rows.sort((a,b)=>a.round-b.round);
-}
-
 
 async function refreshData(showToast = true) {
   if (isRefreshing) return;
@@ -837,8 +726,9 @@ async function refreshData(showToast = true) {
     for (const sourceUrl of API_ALL_SOURCES) {
       try {
         const remote = await getJson(sourceUrl, 12000);
-        const all = extractDraws(remote);
-        if (all.length >= 1000 && isContinuousHistory(all)) {
+        const audit = auditHistory(remote);
+        const all = audit.draws;
+        if (all.length >= 1000 && audit.isContinuous) {
           const sourceLabel = sourceUrl.startsWith('/api/') ? 'Vercel 서버 프록시 누적 JSON' : (sourceUrl.includes('raw.githubusercontent.com') ? 'GitHub 원본 JSON' : 'GitHub Pages 누적 데이터');
           all.forEach(draw => { draw.source = sourceLabel; });
           draws = mergeDraws(draws, all);
@@ -846,7 +736,7 @@ async function refreshData(showToast = true) {
           break;
         }
         if (all.length) draws = mergeDraws(draws, all);
-        errors.push('누적 데이터가 1회부터 끊김 없이 이어지지 않습니다.');
+        errors.push('누적 데이터 정합성 확인 실패: '+summarizeHistoryAudit(audit));
       } catch (error) { if (!isUnavailableLocalProxy(sourceUrl, error)) errors.push(`누적 데이터: ${error.message}`); }
     }
 
@@ -882,38 +772,45 @@ async function refreshData(showToast = true) {
       } catch (error) { errors.push(`최신 결과 보조 조회: ${error.message}`); }
     }
 
-    // 누적 JSON이 불완전하면 CSV 사본을 보조로 읽습니다.
-    if (!historicalSource || !isContinuousHistory(draws)) {
+    // CSV 사본은 회차 누락 보완뿐 아니라 JSON에 없는 공식 판매액도 채웁니다.
+    const needsCsvEnrichment = draws.some(draw => draw.totalSales == null || draw.totalPrizePayout == null);
+    if (!historicalSource || !isContinuousHistory(draws) || needsCsvEnrichment) {
       try {
         const csv = await getText(CSV_FALLBACK, 10000);
         const parsed = parseCsv(csv);
-        if (parsed.length >= 1000 && isContinuousHistory(parsed)) {
+        const csvAudit = auditDraws(parsed);
+        if (parsed.length >= 1000 && csvAudit.isContinuous) {
           parsed.forEach(draw => { draw.source = 'CSV 보조 사본'; });
           draws = mergeDraws(draws, parsed);
           historicalSource = historicalSource || 'Cashlogy CSV 자료';
-        } else if (parsed.length) errors.push('CSV 자료가 전체 회차를 포함하지 않습니다.');
+        } else if (parsed.length) errors.push('CSV 자료 정합성 확인 실패: '+summarizeHistoryAudit(csvAudit));
       } catch (error) { errors.push(`CSV 보조 자료: ${error.message}`); }
     }
 
     if (!draws.length) draws = [FALLBACK_DRAW];
     draws = mergeDraws([], draws);
+    const finalAudit = auditDraws(draws);
+    if(finalAudit.missingSalesRounds.length) errors.push('최종 보유 데이터: 판매액 누락 '+formatNumber(finalAudit.missingSalesRounds.length)+'회');
+    if(finalAudit.missingPayoutRounds.length) errors.push('최종 보유 데이터: 총 당첨금 누락 '+formatNumber(finalAudit.missingPayoutRounds.length)+'회');
     const newestAvailable = draws.at(-1) || FALLBACK_DRAW;
     latest = newestAvailable;
+    const mergedOfficialLatest = officialLatest ? draws.find(draw => draw.round === officialLatest.round) : null;
+    const mergedMirrorLatest = mirrorLatest ? draws.find(draw => draw.round === mirrorLatest.round) : null;
 
     if (officialLatest && officialLatest.round < newestAvailable.round) {
       latestVerification = 'mismatch';
       latestSource = '공식 조회와 누적 데이터 회차 불일치';
       errors.push(`공식 API는 ${officialLatest.round}회, 보유 자료는 ${newestAvailable.round}회까지 포함합니다. 최신 여부를 재확인하세요.`);
     } else if (officialLatest && officialLatest.round === newestAvailable.round) {
-      latest = officialLatest;
+      latest = mergedOfficialLatest || officialLatest;
       latestVerification = 'official';
       latestSource = '동행복권 공식 API';
     } else if (officialLatest && officialLatest.round > newestAvailable.round) {
-      latest = officialLatest;
+      latest = mergedOfficialLatest || officialLatest;
       latestVerification = 'official';
       latestSource = '동행복권 공식 API';
     } else if (mirrorLatest && mirrorLatest.round === newestAvailable.round) {
-      latest = mirrorLatest;
+      latest = mergedMirrorLatest || mirrorLatest;
       latestVerification = 'mirror';
       latestSource = '공개 최신 결과 사본';
     } else if (String(newestAvailable.source || '').includes('GitHub') || String(newestAvailable.source || '').includes('CSV')) {
@@ -927,14 +824,20 @@ async function refreshData(showToast = true) {
       latestSource = '확인 필요';
     }
 
-    dataReady = isContinuousHistory(draws);
-    persistDraws();
+    dataReady = finalAudit.isContinuous;
+    const drawCachePersisted = persistDraws();
+    if(!drawCachePersisted) {
+      errors.push('회차 데이터는 연결했지만 브라우저 캐시에 저장하지 못했습니다. 현재 화면을 닫으면 다시 연결해야 할 수 있습니다.');
+    }
     const syncSucceeded = Boolean(historicalSource || officialLatest || mirrorLatest);
     syncMeta.status = !syncSucceeded ? 'error' : (errors.length || !dataReady ? 'partial' : 'ok');
     syncMeta.lastSuccessAt = syncSucceeded ? new Date().toISOString() : syncMeta.lastSuccessAt;
     syncMeta.source = latestSource;
     syncMeta.errors = errors.slice(0, 12);
-    persistSyncMeta();
+    if(!persistSyncMeta()) {
+      errors.push('동기화 상태 메타데이터를 브라우저에 저장하지 못했습니다.');
+      syncMeta.errors = errors.slice(0,12);
+    }
 
     const statusSource = latestSource || (historicalSource ? '누적 자료' : '저장 데이터');
     if (status) {
@@ -961,7 +864,8 @@ async function refreshData(showToast = true) {
     if (showToast) toast(dataReady ? `${draws.length.toLocaleString()}회차 데이터 연결 완료` : '확보된 데이터로 화면을 갱신했습니다.');
   } catch (error) {
     errors.push(`화면 갱신: ${error.message}`);
-    syncMeta.status = 'error'; syncMeta.errors = errors.slice(0, 12); persistSyncMeta();
+    syncMeta.status = 'error'; syncMeta.errors = errors.slice(0, 12);
+    if(!persistSyncMeta()) errors.push('동기화 상태 메타데이터를 저장하지 못했습니다.');
     if (status) {
       status.textContent = '데이터 연결 확인 필요';
       status.style.color = 'var(--yellow)';
@@ -1001,6 +905,10 @@ function renderLatest() {
   const sourceLabel = $('latestSourceLabel');
   if (sourceLabel) sourceLabel.textContent = ({official:'출처: 동행복권 사이트 조회',mirror:'출처: 공개 데이터 사본',history:'출처: 누적 회차 데이터',cache:'출처: 저장된 데이터',pending:'출처: 확인 필요',mismatch:'출처: 회차 불일치 확인 필요'})[latestVerification] || '출처: 확인 필요';
   $('latestBonus').innerHTML = unverifiedFallback ? '보너스 번호 확인 전' : `보너스 ${ball(latest.bonus,true)}`;
+  const latestSales = $('latestSales');
+  const latestPayout = $('latestPayout');
+  if (latestSales) latestSales.textContent = unverifiedFallback ? '확인 대기' : formatDrawMoney(latest.totalSales);
+  if (latestPayout) latestPayout.textContent = unverifiedFallback ? '확인 대기' : formatDrawMoney(latest.totalPrizePayout);
   $('checkRound').value = unverifiedFallback ? '' : latest.round;
   $('statDrawCount').textContent = draws.length.toLocaleString();
 }
@@ -1031,7 +939,13 @@ function recordResearchRun(report) {
 function loadResearchCandidates() {
   try {
     const value = JSON.parse(appStorageGet(RESEARCH_CANDIDATES_KEY) || '[]');
-    return Array.isArray(value) ? value.filter(item => item && typeof item.id === 'string' && typeof item.label === 'string').slice(0,100) : [];
+    if (!Array.isArray(value)) return [];
+    const candidates = [];
+    for (const item of value) {
+      if (item && typeof item.id === 'string' && typeof item.label === 'string') candidates.push(item);
+      if (candidates.length >= 100) break;
+    }
+    return candidates;
   } catch (_) { return []; }
 }
 
@@ -2046,12 +1960,12 @@ function saveSimulationTicketSet() {
   if(!simulationGeneratedTickets.length) return toast('먼저 빈출 번호 조합을 생성해 주세요.');
   const known=new Set(saved.map(item=>item.numbers.join('-')));
   const now=new Date();
-  let added=0;
+  const entries=[];
   for(const numbers of simulationGeneratedTickets){
     const key=numbers.join('-');
     if(known.has(key)) continue;
     known.add(key);
-    saved.unshift({
+    entries.push({
       id:'sim-ticket-'+Date.now()+'-'+Math.random().toString(16).slice(2),
       numbers:sortNums(numbers),
       mode:'stats',
@@ -2059,12 +1973,15 @@ function saveSimulationTicketSet() {
       favorite:false,
       syncUpdatedAt:now.toISOString()
     });
-    added++;
   }
-  if(!added) return toast('생성한 조합은 이미 보관함에 있습니다.');
-  persistSaved();
+  if(!entries.length) return toast('생성한 조합은 이미 보관함에 있습니다.');
+  if(saved.length+entries.length>MAX_SAVED_ENTRIES) {
+    return toast('번호 보관함은 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개까지 저장할 수 있습니다. 기존 번호를 삭제하지는 않았습니다.');
+  }
+  if(!persistSaved([...entries,...saved])) return false;
   renderSavedReports();
-  toast(added+'개 조합을 내 번호 보관함에 저장했습니다.');
+  toast(entries.length+'개 조합을 내 번호 보관함에 저장했습니다.');
+  return true;
 }
 
 function exportAnalyticsCsv() {
@@ -2099,10 +2016,10 @@ function renderHistory() {
     $('historyList').innerHTML = '<div class="empty">해당 회차 데이터가 없습니다.</div>';
     return;
   }
-  $('historyList').innerHTML = `<div class="table-wrap"><table><thead><tr><th>회차</th><th>추첨일</th><th>당첨번호</th><th>보너스</th><th>1등 당첨자</th></tr></thead><tbody>${pageRows.map(draw=>{
+  $('historyList').innerHTML = `<div class="table-wrap"><table><thead><tr><th>회차</th><th>추첨일</th><th>당첨번호</th><th>보너스</th><th>1등 당첨자</th><th>판매액</th><th>총 당첨금</th></tr></thead><tbody>${pageRows.map(draw=>{
     const rank1 = draw.ranks?.find(item=>Number(item.rank)===1);
     const winners = rank1?.winners;
-    return `<tr><td><strong>${draw.round}회</strong></td><td>${escapeHtml(draw.date || '-')}</td><td><div class="history-row">${draw.numbers.map(n=>ball(n,true)).join('')}</div></td><td>${ball(draw.bonus,true,true)}</td><td>${winners != null && Number.isFinite(Number(winners)) ? `${formatNumber(winners)}명` : '-'}</td></tr>`;
+    return `<tr><td><strong>${draw.round}회</strong></td><td>${escapeHtml(draw.date || '-')}</td><td><div class="history-row">${draw.numbers.map(n=>ball(n,true)).join('')}</div></td><td>${ball(draw.bonus,true,true)}</td><td>${winners != null && Number.isFinite(Number(winners)) ? `${formatNumber(winners)}명` : '-'}</td><td>${formatDrawMoney(draw.totalSales)}</td><td>${formatDrawMoney(draw.totalPrizePayout)}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
@@ -2175,15 +2092,64 @@ function toggleSavedFavorite(index) {
   toast(saved[index].favorite ? '즐겨찾기에 추가했습니다.' : '즐겨찾기에서 해제했습니다.');
 }
 
+function buildSavedRecoveryArchive() {
+  return {
+    schema:'lucky645-local-recovery-v1',
+    app:'LUCKY 645',
+    version:1,
+    exportedAt:new Date().toISOString(),
+    storage:{
+      saved:appStorageGet(SAVED_KEY)||'[]',
+      savedCheckHistory:appStorageGet(SAVED_CHECKS_KEY)||'[]',
+      autoCheckMeta:appStorageGet(AUTO_CHECK_KEY)||'{}'
+    }
+  };
+}
+
 function exportSavedBackup() {
-  if (!saved.length && !savedCheckHistory.length) return toast('백업할 저장 번호 또는 확인 이력이 없습니다.');
-  const payload = { app: 'LUCKY 645', version: 2, exportedAt: new Date().toISOString(), saved, savedCheckHistory, autoCheckMeta };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url; link.download = `lucky645-backup-${new Date().toISOString().slice(0,10)}.json`;
-  document.body.appendChild(link); link.click(); link.remove(); setTimeout(()=>URL.revokeObjectURL(url), 1000);
-  toast('번호 보관함 백업 파일을 저장했습니다.');
+  const archive=buildSavedRecoveryArchive();
+  const hasSaved=archive.storage.saved!=='[]';
+  const hasHistory=archive.storage.savedCheckHistory!=='[]';
+  if(!hasSaved&&!hasHistory) return toast('백업할 저장 번호 또는 확인 이력이 없습니다.');
+  const blob=new Blob([JSON.stringify(archive,null,2)],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;link.download='lucky645-full-recovery-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  if(blob.size>MAX_BACKUP_FILE_SIZE) {
+    toast('복구 백업 파일을 저장했지만 12MiB를 초과해 앱에서 바로 불러올 수 없습니다. 원본 파일을 별도로 안전하게 보관해 주세요.');
+  } else {
+    toast('저장 번호·전체 당첨 확인 이력·자동 확인 기준을 복구 백업으로 저장했습니다.');
+  }
+}
+function writeStorageTransaction(entries) {
+  if (!Array.isArray(entries) || entries.some(entry => !Array.isArray(entry) || entry.length !== 2)) {
+    throw new Error('저장 작업 형식이 올바르지 않습니다.');
+  }
+  const previous = entries.map(([key]) => appStorageGet(key));
+  const written = [];
+  try {
+    for (const [key,value] of entries) {
+      appStorageSet(key,value);
+      written.push(key);
+    }
+    return true;
+  } catch (error) {
+    let rollbackFailed = false;
+    written.forEach(key => {
+      const index = entries.findIndex(entry => entry[0] === key);
+      try {
+        if (previous[index] === null) appStorageRemove(key);
+        else appStorageSet(key, previous[index]);
+      } catch (_) {
+        rollbackFailed = true;
+      }
+    });
+    const detail = error?.message || '저장 공간 오류';
+    throw new Error(rollbackFailed
+      ? '백업 복원 중 저장에 실패했고 일부 이전 값 복구도 실패했습니다. 브라우저 저장 공간을 확보한 뒤 데이터를 확인해 주세요. (' + detail + ')'
+      : '백업 복원 저장에 실패해 기존 저장값으로 되돌렸습니다. 브라우저 저장 공간을 확인해 주세요. (' + detail + ')');
+  }
 }
 
 async function importSavedBackup(file) {
@@ -2194,12 +2160,58 @@ async function importSavedBackup(file) {
   try {
     const fileText=await file.text();
     assertAccountScope(importOwner,importGeneration);
-    const raw = JSON.parse(fileText);
+    const filePayload = JSON.parse(fileText);
+    if(filePayload?.schema==='lucky645-local-recovery-v1') {
+      const archive=filePayload.storage;
+      if(!archive||typeof archive.saved!=='string'||typeof archive.savedCheckHistory!=='string'||typeof archive.autoCheckMeta!=='string') {
+        throw new Error('전체 복구 백업 형식이 올바르지 않습니다.');
+      }
+      const archiveSaved=JSON.parse(archive.saved);
+      const archiveHistory=JSON.parse(archive.savedCheckHistory);
+      const archiveMeta=JSON.parse(archive.autoCheckMeta);
+      if(!Array.isArray(archiveSaved)||!Array.isArray(archiveHistory)||
+         !archiveMeta||typeof archiveMeta!=='object'||Array.isArray(archiveMeta)) {
+        throw new Error('전체 복구 백업의 저장 데이터 구조가 올바르지 않습니다.');
+      }
+      const normalizedSaved=archiveSaved.map(normalizeSavedEntry);
+      const normalizedHistory=archiveHistory.map(normalizeSavedCheckRecord);
+      if(normalizedSaved.some(item=>!item)||normalizedHistory.some(item=>!item)) {
+        throw new Error('전체 복구 백업에 유효하지 않은 저장 기록이 있어 복원을 중단했습니다. 원본 파일은 변경되지 않았습니다.');
+      }
+      if(!confirm('전체 복구 백업에는 표시 제한을 넘는 과거 확인 이력도 포함될 수 있습니다. 이 브라우저의 현재 계정 로컬 번호 보관함·확인 이력·자동 확인 기준을 백업 내용으로 교체합니다. 클라우드 데이터 전체를 교체하는 기능은 아닙니다. 먼저 현재 데이터를 별도로 내보냈는지 확인한 뒤 계속할까요?')) return;
+      assertAccountScope(importOwner,importGeneration);
+      const restoredMeta={
+        lastRound:Number.isInteger(Number(archiveMeta.lastRound))&&Number(archiveMeta.lastRound)>0?Number(archiveMeta.lastRound):0,
+        lastCheckedAt:typeof archiveMeta.lastCheckedAt==='string'?archiveMeta.lastCheckedAt:'',
+        lastStatus:typeof archiveMeta.lastStatus==='string'?archiveMeta.lastStatus.slice(0,40):'대기'
+      };
+      writeStorageTransaction([
+        [SAVED_KEY,JSON.stringify(normalizedSaved)],
+        [SAVED_CHECKS_KEY,JSON.stringify(normalizedHistory)],
+        [AUTO_CHECK_KEY,JSON.stringify(restoredMeta)]
+      ]);
+      saved=normalizedSaved;
+      savedCheckHistory=normalizedHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY);
+      autoCheckMeta=restoredMeta;
+      renderSaved();
+      updateTopStats();
+      renderSavedReports();
+      if(savedBacktestResult)runSavedBacktest();
+      toast('이 브라우저 로컬 복구를 완료했습니다. 보관함 '+formatNumber(saved.length)+'개, 전체 확인 이력 '+formatNumber(normalizedHistory.length)+'건을 저장했습니다.');
+      return;
+    }
+    const raw = filePayload;
     const rows = Array.isArray(raw) ? raw : raw?.saved;
-    if (!Array.isArray(rows)) throw new Error('저장 번호 목록이 없습니다.');
+    const importedHistoryRows = Array.isArray(raw?.savedCheckHistory) ? raw.savedCheckHistory : [];
+    validateSavedBackupLimits(rows, importedHistoryRows);
     const normalized = rows.map(normalizeSavedEntry).filter(Boolean);
     if (!normalized.length && rows.length) throw new Error('유효한 번호 조합이 없습니다.');
-    const localByNumbers = new Map(saved.map(entry=>[entry.numbers.join('-'),entry]));
+
+    // Build the complete next state without mutating the live UI state.
+    const nextSaved = saved.map(entry => ({...entry,numbers:[...entry.numbers]}));
+    const nextHistory = savedCheckHistory.map(item => ({...item,numbers:[...item.numbers],winningNumbers:[...(item.winningNumbers||[])]}));
+    const nextMeta = {...autoCheckMeta};
+    const localByNumbers = new Map(nextSaved.map(entry=>[entry.numbers.join('-'),entry]));
     const importedIdMap = new Map();
     let added = 0;
     normalized.forEach(entry=>{
@@ -2207,7 +2219,7 @@ async function importSavedBackup(file) {
       let local = localByNumbers.get(key);
       if (!local) {
         local = {...entry,id:`import-${Date.now()}-${added}`,syncUpdatedAt:entry.syncUpdatedAt || new Date().toISOString()};
-        saved.push(local); localByNumbers.set(key,local); added++;
+        nextSaved.push(local); localByNumbers.set(key,local); added++;
       } else {
         const wasFavorite = local.favorite;
         mergeCloudSavedRecord(local,entry);
@@ -2218,8 +2230,9 @@ async function importSavedBackup(file) {
       }
       importedIdMap.set(String(entry.id), local.id);
     });
-    const importedHistory = Array.isArray(raw?.savedCheckHistory) ? raw.savedCheckHistory.map(normalizeSavedCheckRecord).filter(Boolean) : [];
-    const historyKeys = new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
+
+    const importedHistory = importedHistoryRows.map(normalizeSavedCheckRecord).filter(Boolean);
+    const historyKeys = new Set(nextHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
     let historyAdded = 0;
     importedHistory.forEach(row=>{
       const local = localByNumbers.get(row.numbers.join('-'));
@@ -2228,28 +2241,43 @@ async function importSavedBackup(file) {
       const key=`${Number(row.round)}:${String(row.savedId || row.id)}`;
       if(!historyKeys.has(key)){
         row.id = key;
-        savedCheckHistory.push(row); historyKeys.add(key); historyAdded++;
+        nextHistory.push(row); historyKeys.add(key); historyAdded++;
       }
     });
+
     if (raw?.autoCheckMeta && typeof raw.autoCheckMeta === 'object') {
       const importedRound = Number(raw.autoCheckMeta.lastRound);
       const newestKnownRound = Number(draws.at(-1)?.round || latest?.round || 0);
       if (Number.isSafeInteger(importedRound) && importedRound >= 0 && newestKnownRound > 0) {
-        autoCheckMeta.lastRound = Math.max(autoCheckMeta.lastRound || 0, Math.min(importedRound,newestKnownRound));
+        nextMeta.lastRound = Math.max(nextMeta.lastRound || 0, Math.min(importedRound,newestKnownRound));
       }
       const importedCheckedAt = normalizeSyncTimestamp(raw.autoCheckMeta.lastCheckedAt);
-      if (importedCheckedAt && (!autoCheckMeta.lastCheckedAt || importedCheckedAt > autoCheckMeta.lastCheckedAt)) {
-        autoCheckMeta.lastCheckedAt = importedCheckedAt;
+      if (importedCheckedAt && (!nextMeta.lastCheckedAt || importedCheckedAt > nextMeta.lastCheckedAt)) {
+        nextMeta.lastCheckedAt = importedCheckedAt;
       }
-      autoCheckMeta.lastStatus = '백업에서 복원 · 회차 기준 검증 완료';
-      persistAutoCheckMeta();
+      nextMeta.lastStatus = '백업에서 복원 · 회차 기준 검증 완료';
     }
-    persistSavedCheckHistory();
-    persistSaved();
+
+    const boundedNextHistory = nextHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY);
+    assertSavedCollectionCapacity(nextSaved.length,boundedNextHistory.length);
+    assertAccountScope(importOwner,importGeneration);
+    writeStorageTransaction([
+      [SAVED_KEY,JSON.stringify(nextSaved)],
+      [SAVED_CHECKS_KEY,JSON.stringify(boundedNextHistory)],
+      [AUTO_CHECK_KEY,JSON.stringify(nextMeta)]
+    ]);
+    saved = nextSaved;
+    savedCheckHistory = boundedNextHistory;
+    autoCheckMeta = nextMeta;
+    if (!cloudApplying) scheduleCloudSync();
+    renderSaved();
+    updateTopStats();
     renderSavedReports();
+    if (savedBacktestResult) runSavedBacktest();
     toast(`${added}개 조합과 ${historyAdded}개 확인 이력을 가져왔습니다.`);
   } catch (error) { toast(`백업 파일을 읽지 못했습니다: ${error.message}`); }
 }
+
 
 function modeLabel(mode) {
   return ({random:'완전 무작위',balanced:'균형 조합',stats:'통계 참고',hybrid:'통계 + 무작위 혼합',custom:'직접 설정',coverage:'번호 커버리지 분산'})[mode] || '번호 추천';
@@ -2717,6 +2745,10 @@ function saveCombination(numbers,mode=activeMode) {
     renderGenerated();
     return false;
   }
+  if(saved.length>=MAX_SAVED_ENTRIES) {
+    toast('번호 보관함은 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개까지 저장할 수 있습니다. 기존 번호를 삭제한 뒤 다시 시도해 주세요.');
+    return false;
+  }
   const now=new Date();
   const entry={
     id:String(now.getTime())+'-'+Math.random().toString(16).slice(2),
@@ -2742,6 +2774,10 @@ function saveAllGenerated() {
     if(prepared.duplicateCount||prepared.invalidCount) {
       toast('새로 저장할 조합이 없습니다. 중복 '+prepared.duplicateCount+'개, 잘못된 조합 '+prepared.invalidCount+'개');
     } else toast('새로 저장할 조합이 없습니다.');
+    return false;
+  }
+  if(saved.length+prepared.added>MAX_SAVED_ENTRIES) {
+    toast('번호 보관함은 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개까지 저장할 수 있습니다. 일부 조합만 저장하지는 않았습니다.');
     return false;
   }
   // 한 번의 localStorage 쓰기로 전체 저장합니다. 실패하면 saved 메모리 상태도 바꾸지 않습니다.
@@ -2937,7 +2973,7 @@ function cloudTombstonesStorageKey() {
   return userId ? CLOUD_TOMBSTONES_KEY+':'+userId : CLOUD_TOMBSTONES_KEY+':local';
 }
 function loadCloudTombstones() {
-  try { const rows=JSON.parse(appStorageGet(cloudTombstonesStorageKey())||'[]'); return Array.isArray(rows)?rows:[]; } catch (_) { return []; }
+  try { const rows=JSON.parse(appStorageGet(cloudTombstonesStorageKey())||'[]'); return Array.isArray(rows)?rows.slice(-50000):[]; } catch (_) { return []; }
 }
 function persistCloudTombstones(rows) {
   try { appStorageSet(cloudTombstonesStorageKey(), JSON.stringify(rows.slice(-50000))); } catch (_) {}
@@ -3019,6 +3055,8 @@ async function cloudAccessToken() {
   }
 
   const attemptedRefreshToken=cloudSession.refresh_token;
+  const refreshUserId=cloudSession?.user?.id||'';
+  const refreshGeneration=cloudSessionGeneration;
   let refreshed;
   try {
     refreshed=await cloudAuth('token?grant_type=refresh_token',{refresh_token:attemptedRefreshToken});
@@ -3048,7 +3086,22 @@ async function cloudAccessToken() {
     throw error;
   }
 
-  saveCloudSession({...refreshed,expires_at:Math.floor(Date.now()/1000)+Number(refreshed.expires_in||3600)});
+  // A late refresh response must never restore a session after the user switched
+  // accounts or signed out while the request was in flight.
+  if(cloudSessionGeneration!==refreshGeneration||(cloudSession?.user?.id||'')!==refreshUserId) {
+    throw new Error('계정이 변경되어 이전 로그인 세션 갱신을 취소했습니다.');
+  }
+  // Another tab may already have rotated the refresh token for this same account.
+  if(cloudSession?.refresh_token!==attemptedRefreshToken) {
+    if(cloudSession?.user?.id===refreshUserId&&cloudSession?.access_token&&cloudSession?.refresh_token) {
+      return cloudSession.access_token;
+    }
+    throw new Error('로그인 세션이 변경되어 다시 동기화해야 합니다.');
+  }
+  if(refreshed?.user?.id&&refreshed.user.id!==refreshUserId) {
+    throw new Error('로그인 계정이 일치하지 않아 세션 갱신을 취소했습니다.');
+  }
+  saveCloudSession({...refreshed,user:refreshed.user||cloudSession.user,expires_at:Math.floor(Date.now()/1000)+Number(refreshed.expires_in||3600)});
   return cloudSession.access_token;
 }
 function renderCloudAuth(message='') {
@@ -3209,6 +3262,14 @@ async function performCloudSync() {
   assertCloudSyncSession(syncUserId,syncGeneration);
   const remote=await fetchAllCloudRows(token);
   assertCloudSyncSession(syncUserId,syncGeneration);
+  // Keep an in-memory recovery point until all local records and tombstones commit together.
+  const previousSavedState=saved.map(entry=>({...entry,numbers:[...entry.numbers]}));
+  const previousSavedCheckHistoryState=savedCheckHistory.map(row=>({
+    ...row,
+    numbers:[...row.numbers],
+    winningNumbers:[...(row.winningNumbers||[])]
+  }));
+  const previousAutoCheckMeta={...autoCheckMeta};
   const tombstoneMap=new Map(loadCloudTombstones().map(row=>[row.category+':'+row.record_key,row]));
   (remote||[]).filter(row=>row.deleted_at).forEach(row=>tombstoneMap.set(row.category+':'+row.record_key,{
     category:row.category,
@@ -3231,6 +3292,34 @@ async function performCloudSync() {
       remoteState=row.payload;
     }
   }
+  // Validate the merged record counts before mutating in-memory state.
+  const prospectiveSavedByNumbers=new Map(saved.map(item=>[item.numbers.join('-'),item]));
+  const prospectiveRemoteSavedById=new Map();
+  for(const row of remoteSavedRows) {
+    const item=normalizeSavedEntry(row.payload);
+    if(!item)continue;
+    const key=item.numbers.join('-');
+    let local=prospectiveSavedByNumbers.get(key);
+    if(!local) {
+      local=item;
+      prospectiveSavedByNumbers.set(key,local);
+    }
+    prospectiveRemoteSavedById.set(String(row.payload?.id || row.record_key),local.id);
+    if(prospectiveSavedByNumbers.size>MAX_SAVED_ENTRIES) {
+      throw new Error('클라우드 번호 보관함이 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개를 초과합니다. 로컬 데이터를 덮어쓰지 않고 동기화를 중단했습니다.');
+    }
+  }
+  const prospectiveHistoryKeys=new Set(savedCheckHistory.map(row=>`${Number(row.round)}:${String(row.savedId || row.id)}`));
+  assertSavedCollectionCapacity(prospectiveSavedByNumbers.size,prospectiveHistoryKeys.size);
+  for(const row of remoteHistoryRows) {
+    const item=normalizeCloudHistoryRecord(row,prospectiveRemoteSavedById,prospectiveSavedByNumbers);
+    if(!item)continue;
+    prospectiveHistoryKeys.add(`${Number(item.round)}:${String(item.savedId || item.id)}`);
+    if(prospectiveHistoryKeys.size>MAX_SAVED_BACKUP_CHECK_HISTORY) {
+      throw new Error('클라우드 확인 이력이 최대 '+formatNumber(MAX_SAVED_BACKUP_CHECK_HISTORY)+'건을 초과합니다. 로컬 데이터를 덮어쓰지 않고 동기화를 중단했습니다.');
+    }
+  }
+
   const localSavedByNumbers=new Map(saved.map(item=>[item.numbers.join('-'),item]));
   const remoteSavedById=new Map();
 
@@ -3281,14 +3370,26 @@ async function performCloudSync() {
 
   saved=saved.filter(item=>!deleted.has('saved_combination:'+String(item.id))&&!isSavedCombinationDeleted(item,deletedSavedNumbers));
   savedCheckHistory=savedCheckHistory.filter(item=>!deleted.has('check_history:'+String(item.id||item.round+':'+item.savedId)));
-  persistCloudTombstones([...tombstoneMap.values()]);
+  assertSavedCollectionCapacity(saved.length,savedCheckHistory.length);
+  assertCloudSyncSession(syncUserId,syncGeneration);
+  const nextTombstones=[...tombstoneMap.values()].slice(-50000);
   cloudApplying=true;
-  try{
-    appStorageSet(SAVED_KEY,JSON.stringify(saved));
-    appStorageSet(SAVED_CHECKS_KEY,JSON.stringify(savedCheckHistory));
-    appStorageSet(AUTO_CHECK_KEY,JSON.stringify(autoCheckMeta));
-    renderSaved();renderSavedReports();updateTopStats();
-  }finally{cloudApplying=false;}
+  try {
+    writeStorageTransaction([
+      [SAVED_KEY,JSON.stringify(saved)],
+      [SAVED_CHECKS_KEY,JSON.stringify(savedCheckHistory)],
+      [AUTO_CHECK_KEY,JSON.stringify(autoCheckMeta)],
+      [cloudTombstonesStorageKey(),JSON.stringify(nextTombstones)]
+    ]);
+  } catch(error) {
+    saved=previousSavedState;
+    savedCheckHistory=previousSavedCheckHistoryState;
+    autoCheckMeta=previousAutoCheckMeta;
+    throw error;
+  } finally {
+    cloudApplying=false;
+  }
+  renderSaved();renderSavedReports();updateTopStats();
 
   if(dataReady && latestVerification==='official') autoCheckLatestDraw();
   if(savedBacktestResult) runSavedBacktest();

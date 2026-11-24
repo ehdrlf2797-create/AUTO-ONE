@@ -85,15 +85,67 @@ test('does not disguise an invalid newest official row as an older valid round',
   assert.equal(extractOfficialLatest({data:{list:[officialRound, invalidNewest]}}), null);
 });
 
-test('negative optional prize, winner and sales values are discarded', () => {
+test('negative optional prize, winner, sales and payout values are discarded', () => {
   const draw = normalizeDraw({
     ...officialRound,
     ranks:[{rank:1,prize:-100,winners:-1}],
-    wholEpsdSumNtslAmt:-500
+    wholEpsdSumNtslAmt:-500,
+    rlvtEpsdSumNtslAmt:-700
   });
   assert.equal(draw.ranks[0].prize, null);
   assert.equal(draw.ranks[0].winners, null);
   assert.equal(draw.totalSales, null);
+  assert.equal(draw.totalPrizePayout, null);
+});
+
+test('ignores a third-party totalSales field and uses only official sales amount', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    totalSales: 58496443856,
+    wholEpsdSumNtslAmt: 116992886000,
+    rlvtEpsdSumNtslAmt: 58496443856
+  });
+  assert.equal(draw.totalSales, 116992886000);
+  assert.equal(draw.totalPrizePayout, 58496443856);
+});
+
+test('does not invent sales or payout when authoritative fields are absent', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    totalSales: 58496443856
+  });
+  assert.equal(draw.totalSales, null);
+  assert.equal(draw.totalPrizePayout, null);
+});
+
+test('derives payout from all five complete ranks without treating third-party totalSales as sales', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    totalSales: 116992886000,
+    ranks: [
+      {rank:1,prize:100,winners:2},
+      {rank:2,prize:20,winners:3},
+      {rank:3,prize:5,winners:4},
+      {rank:4,prize:4,winners:5},
+      {rank:5,prize:1,winners:6}
+    ]
+  });
+  assert.equal(draw.totalSales, null);
+  assert.equal(draw.totalPrizePayout, 306);
+});
+
+test('does not derive payout when any rank is incomplete', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    ranks: [
+      {rank:1,prize:100,winners:2},
+      {rank:2,prize:20,winners:3},
+      {rank:3,prize:5,winners:4},
+      {rank:4,prize:4,winners:5},
+      {rank:5,prize:5000,winners:null}
+    ]
+  });
+  assert.equal(draw.totalPrizePayout, null);
 });
 
 test('status endpoint documents that cache metrics are per serverless instance', async () => {
@@ -108,4 +160,22 @@ test('status endpoint documents that cache metrics are per serverless instance',
   assert.equal(response.statusCode,200);
   assert.equal(status.cacheScope,'serverless-instance-memory');
   assert.match(status.cacheNote,/다른 인스턴스의 캐시 상태를 대표하지 않습니다/);
+});
+
+
+test('does not derive payout from duplicated rank rows', () => {
+  const draw = normalizeDraw({
+    ...officialRound,
+    ranks: [
+      {rank:1,prize:100,winners:2},
+      {rank:1,prize:999,winners:9},
+      {rank:2,prize:20,winners:3},
+      {rank:3,prize:5,winners:4},
+      {rank:4,prize:4,winners:5},
+      {rank:5,prize:1,winners:6}
+    ]
+  });
+  assert.equal(draw.totalPrizePayout, null);
+  assert.equal(draw.ranks.some(item => item.rank === 1), false);
+  assert.deepEqual(draw.ranks.map(item => item.rank), [2, 3, 4, 5]);
 });

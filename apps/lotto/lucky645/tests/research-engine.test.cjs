@@ -99,6 +99,65 @@ test('Monte Carlo simulation accounts for six selections per draw and every resu
   assert.ok(result.numberCounts.slice(1).every(value => Number.isInteger(value)));
 });
 
+test('typed-array Monte Carlo sampler preserves the previous seeded draw sequence', async () => {
+  const helperStart = source.indexOf('function hashSeed(value)');
+  const helperEnd = source.indexOf('\n  function randomTicket(rng)', helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart);
+  const randomContext = {};
+  vm.runInNewContext(
+    source.slice(helperStart, helperEnd) +
+      '\nthis.createRng = createRng; this.chooseIndex = chooseIndex;',
+    randomContext
+  );
+
+  const count = 25000;
+  const ticket = [1,2,3,4,5,6];
+  const rng = randomContext.createRng('lucky645-monte-carlo-1m-v2:typed-array-equivalence');
+  const expectedNumbers = Array(46).fill(0);
+  const expectedMatches = Array(7).fill(0);
+  const ticketSet = new Set(ticket);
+  for (let attempt = 0; attempt < count; attempt++) {
+    const selected = new Set();
+    while (selected.size < 6) selected.add(1 + randomContext.chooseIndex(rng,45));
+    let matches = 0;
+    for (const number of selected) {
+      expectedNumbers[number]++;
+      if (ticketSet.has(number)) matches++;
+    }
+    expectedMatches[matches]++;
+  }
+
+  const research = loadResearch();
+  const actual = await research.runMonteCarlo(count,ticket,null,'typed-array-equivalence');
+  assert.deepEqual(Array.from(actual.numberCounts),expectedNumbers);
+  assert.deepEqual(Array.from(actual.matchCounts),expectedMatches);
+  assert.equal(actual.totalSelections,count*6);
+});
+
+
+
+test('one-million Monte Carlo run completes with 100 progress yields and six million selections', async (t) => {
+  const research = loadResearch();
+  const progress = [];
+  const startedAt = Date.now();
+  const result = await research.runMonteCarlo(
+    1000000,
+    [1,2,3,4,5,6],
+    (completed,total) => progress.push([completed,total]),
+    'ci-one-million-smoke'
+  );
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(result.attempts,1000000);
+  assert.equal(result.totalSelections,6000000);
+  assert.equal(result.numberCounts.reduce((sum,value)=>sum+value,0),6000000);
+  assert.equal(result.matchCounts.reduce((sum,value)=>sum+value,0),1000000);
+  assert.equal(progress.length,100);
+  assert.deepEqual(progress[0],[10000,1000000]);
+  assert.deepEqual(progress.at(-1),[1000000,1000000]);
+  t.diagnostic('1,000,000 Monte Carlo draws completed in '+elapsedMs+' ms on this CI runner; this is not a mobile-device benchmark.');
+});
+
 test('research protocol refuses non-requested simulation and strategy counts', async () => {
   const research = loadResearch();
   await assert.rejects(

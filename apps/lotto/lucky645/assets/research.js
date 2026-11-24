@@ -359,17 +359,26 @@
     const numberCounts = new Uint32Array(46);
     const matchCounts = new Uint32Array(7);
     const ticketSet = new Set(ticket);
+    const selectedFlags = new Uint8Array(46);
+    const selectedNumbers = new Uint8Array(6);
     const batchSize = 10000;
     let completed = 0;
     while (completed < count) {
       const batchEnd = Math.min(count, completed + batchSize);
       for (; completed < batchEnd; completed++) {
-        const selected = new Set();
-        while (selected.size < 6) selected.add(1 + chooseIndex(rng, 45));
+        let selectedCount = 0;
+        while (selectedCount < 6) {
+          const number = 1 + chooseIndex(rng, 45);
+          if (selectedFlags[number]) continue;
+          selectedFlags[number] = 1;
+          selectedNumbers[selectedCount++] = number;
+        }
         let matches = 0;
-        for (const number of selected) {
+        for (let index = 0; index < 6; index++) {
+          const number = selectedNumbers[index];
           numberCounts[number]++;
           if (ticketSet.has(number)) matches++;
+          selectedFlags[number] = 0;
         }
         matchCounts[matches]++;
       }
