@@ -198,3 +198,11 @@ Files:
 - **Preview READY:** https://auto-one-lucky645-d1idvq1j5-ehdrlf2797-3377.vercel.app
 - Research backup persistence was separately audited: at most five backups per user are retained; the global storage array preserves other-account entries, and backup creation rolls back in-memory changes when storage fails. No destructive global byte cap was added.
 - Browser quota behavior remains covered by injected storage tests only; real device quota exhaustion and authenticated browser verification remain untested.
+## Saved collection cap and recovery safety (2026-11-25)
+
+- The common persistSaved entry point now enforces the 10,000-combination ceiling, closing gaps where future callers could bypass the individual/bulk/simulation pre-checks.
+- Existing legacy collections already above 10,000 are never truncated automatically. The guard allows same-size edits and deletions/reductions, but blocks any write that increases the oversized collection further. The user is told to back up or delete existing entries before adding more.
+- Regression tests cover adding to an oversized legacy collection (blocked without writing), reducing it below the cap (allowed), editing records at the same size (allowed), and existing success/quota-failure persistence tests.
+- **CI Run #45450369615** on commit e09fab0c9821df80be8a2d88f30c0c7c99f44ee3 passed all three jobs: LUCKY 645 API/UI, Python 3.14 Ubuntu and Python 3.14 Windows.
+- **Preview READY:** https://auto-one-lucky645-p3diby1uf-ehdrlf2797-3377.vercel.app
+- No automatic deletion or global storage byte limit was introduced; legacy-data export/recovery work remains a prerequisite to any future hard byte budget.
