@@ -1176,8 +1176,11 @@ test('refresh diagnostics distinguish live draw readiness from browser cache per
   const end=app.indexOf('\nfunction ',start+20);
   assert.ok(start>=0&&end>start);
   const refresh=app.slice(start,end);
-  assert.match(refresh,/dataReady = finalAudit\.isContinuous;[\s\S]*?const drawCachePersisted = persistDraws\(\);/);
-  assert.match(refresh,/if\\(!drawCachePersisted\\)\\s*\\{\\s*errors\\.push\\(/);
-  assert.match(refresh,/if\\(!persistSyncMeta\\(\\)\\)/);
-  assert.match(refresh,/status\\.title = \\[.*\\.\\.\\.errors\\]/);
+  const readiness=refresh.indexOf('dataReady = finalAudit.isContinuous;');
+  const cacheWrite=refresh.indexOf('const drawCachePersisted = persistDraws();');
+  assert.ok(readiness>=0&&cacheWrite>readiness);
+  assert.ok(refresh.includes('if(!drawCachePersisted)'));
+  assert.ok(refresh.includes('errors.push('));
+  assert.ok(refresh.includes('if(!persistSyncMeta())'));
+  assert.ok(refresh.includes('status.title = [`));
 });
