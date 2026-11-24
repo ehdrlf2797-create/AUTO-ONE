@@ -1288,3 +1288,12 @@ test('full recovery archive restore validates every record, confirms replacement
   assert.ok(importer.includes('[AUTO_CHECK_KEY,JSON.stringify(restoredMeta)]'));
   assert.ok(importer.includes('savedCheckHistory=normalizedHistory.slice(-MAX_SAVED_BACKUP_CHECK_HISTORY)'));
 });
+
+
+test('saved backup controls disclose full-history archive and replacement behavior', () => {
+  assert.match(html,/전체 복구 백업 저장/);
+  assert.match(html,/최근 50,000건을 넘는 과거 확인 이력도 포함/);
+  assert.match(html,/현재 계정 데이터는 백업 내용으로 교체/);
+  assert.match(app,/lucky645-full-recovery-/);
+  assert.match(app,/현재 계정의 번호 보관함·확인 이력·자동 확인 기준을 백업 내용으로 교체합니다/);
+});
