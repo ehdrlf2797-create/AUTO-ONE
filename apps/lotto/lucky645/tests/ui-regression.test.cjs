@@ -29,11 +29,11 @@ test('frontend draw normalization preserves official sales and payout without tr
     wholEpsdSumNtslAmt: 116992886000,
     rlvtEpsdSumNtslAmt: 58496443856
   };
-  const draw = context.normalizeDraw(base);
+  const draw = normalizeDraw(base);
   assert.equal(draw.totalSales, 116992886000);
   assert.equal(draw.totalPrizePayout, 58496443856);
 
-  const missingOfficialSales = context.normalizeDraw({
+  const missingOfficialSales = normalizeDraw({
     ...base,
     wholEpsdSumNtslAmt: undefined,
     rlvtEpsdSumNtslAmt: undefined
@@ -41,7 +41,7 @@ test('frontend draw normalization preserves official sales and payout without tr
   assert.equal(missingOfficialSales.totalSales, null);
   assert.equal(missingOfficialSales.totalPrizePayout, null);
 
-  const csvDraw = context.normalizeDraw({
+  const csvDraw = normalizeDraw({
     ...base,
     wholEpsdSumNtslAmt: undefined,
     rlvtEpsdSumNtslAmt: undefined,
@@ -1023,7 +1023,7 @@ test('draw-domain source trust order and merge preserve highest-trust winning nu
   assert.ok(domain.sourceTrust('저장 데이터')>domain.sourceTrust('기본 표시값'));
   const official={round:1,numbers:[1,2,3,4,5,6],bonus:7,source:'동행복권 공식 API',totalSales:null,totalPrizePayout:null,
     ranks:[{rank:1,prize:100,winners:1}]};
-  const github={round:1,numbers:[8,9,10,11,12,13],bonus:14,source:'GitHub 원본 JSON',totalSales:500,totalPrizePayout:250,
+  const github={round:1,numbers:[8,9,10,11,12,13],bonus:14,source:'GitHub 원본 JSON',totSellamnt:500,rlvtEpsdSumNtslAmt:250,
     ranks:[{rank:1,prize:90,winners:2},{rank:2,prize:10,winners:3}]};
   const [merged]=domain.mergeDraws([github],[official]);
   assert.deepEqual(Array.from(merged.numbers),official.numbers);
