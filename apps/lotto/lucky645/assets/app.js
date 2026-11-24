@@ -2156,8 +2156,8 @@ async function importSavedBackup(file) {
   try {
     const fileText=await file.text();
     assertAccountScope(importOwner,importGeneration);
-    const raw = JSON.parse(fileText);
-    if(raw?.schema==='lucky645-local-recovery-v1') {
+    const filePayload = JSON.parse(fileText);
+    if(filePayload?.schema==='lucky645-local-recovery-v1') {
       const archive=raw.storage;
       if(!archive||typeof archive.saved!=='string'||typeof archive.savedCheckHistory!=='string'||typeof archive.autoCheckMeta!=='string') {
         throw new Error('전체 복구 백업 형식이 올바르지 않습니다.');
@@ -2196,7 +2196,7 @@ async function importSavedBackup(file) {
       toast('전체 복구 백업을 복원했습니다. 보관함 '+formatNumber(saved.length)+'개, 전체 확인 이력 '+formatNumber(normalizedHistory.length)+'건을 저장했습니다.');
       return;
     }
-    const raw = JSON.parse(fileText);
+    const raw = filePayload;
     const rows = Array.isArray(raw) ? raw : raw?.saved;
     const importedHistoryRows = Array.isArray(raw?.savedCheckHistory) ? raw.savedCheckHistory : [];
     validateSavedBackupLimits(rows, importedHistoryRows);
