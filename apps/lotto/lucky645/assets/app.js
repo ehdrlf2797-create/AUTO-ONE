@@ -3169,6 +3169,14 @@ async function performCloudSync() {
   assertCloudSyncSession(syncUserId,syncGeneration);
   const remote=await fetchAllCloudRows(token);
   assertCloudSyncSession(syncUserId,syncGeneration);
+  // Keep an in-memory recovery point until all local records and tombstones commit together.
+  const previousSavedState=saved.map(entry=>({...entry,numbers:[...entry.numbers]}));
+  const previousSavedCheckHistoryState=savedCheckHistory.map(row=>({
+    ...row,
+    numbers:[...row.numbers],
+    winningNumbers:[...(row.winningNumbers||[])]
+  }));
+  const previousAutoCheckMeta={...autoCheckMeta};
   const tombstoneMap=new Map(loadCloudTombstones().map(row=>[row.category+':'+row.record_key,row]));
   (remote||[]).filter(row=>row.deleted_at).forEach(row=>tombstoneMap.set(row.category+':'+row.record_key,{
     category:row.category,
@@ -3269,14 +3277,26 @@ async function performCloudSync() {
 
   saved=saved.filter(item=>!deleted.has('saved_combination:'+String(item.id))&&!isSavedCombinationDeleted(item,deletedSavedNumbers));
   savedCheckHistory=savedCheckHistory.filter(item=>!deleted.has('check_history:'+String(item.id||item.round+':'+item.savedId)));
-  persistCloudTombstones([...tombstoneMap.values()]);
+  assertSavedCollectionCapacity(saved.length,savedCheckHistory.length);
+  assertCloudSyncSession(syncUserId,syncGeneration);
+  const nextTombstones=[...tombstoneMap.values()].slice(-50000);
   cloudApplying=true;
-  try{
-    appStorageSet(SAVED_KEY,JSON.stringify(saved));
-    appStorageSet(SAVED_CHECKS_KEY,JSON.stringify(savedCheckHistory));
-    appStorageSet(AUTO_CHECK_KEY,JSON.stringify(autoCheckMeta));
-    renderSaved();renderSavedReports();updateTopStats();
-  }finally{cloudApplying=false;}
+  try {
+    writeStorageTransaction([
+      [SAVED_KEY,JSON.stringify(saved)],
+      [SAVED_CHECKS_KEY,JSON.stringify(savedCheckHistory)],
+      [AUTO_CHECK_KEY,JSON.stringify(autoCheckMeta)],
+      [cloudTombstonesStorageKey(),JSON.stringify(nextTombstones)]
+    ]);
+  } catch(error) {
+    saved=previousSavedState;
+    savedCheckHistory=previousSavedCheckHistoryState;
+    autoCheckMeta=previousAutoCheckMeta;
+    throw error;
+  } finally {
+    cloudApplying=false;
+  }
+  renderSaved();renderSavedReports();updateTopStats();
 
   if(dataReady && latestVerification==='official') autoCheckLatestDraw();
   if(savedBacktestResult) runSavedBacktest();

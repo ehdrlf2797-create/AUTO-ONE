@@ -1083,3 +1083,22 @@ test('draw-domain audit accepts a continuous normalized feed with complete finan
   assert.deepEqual(Array.from(audit.missingSalesRounds),[]);
   assert.deepEqual(Array.from(audit.missingPayoutRounds),[]);
 });
+
+
+test('cloud sync commits saved rows, history, metadata and tombstones in one rollback-aware transaction', () => {
+  const start=app.indexOf('async function performCloudSync()');
+  const end=app.indexOf('\nasync function syncCloudData()',start);
+  assert.ok(start>=0&&end>start);
+  const sync=app.slice(start,end);
+  assert.match(sync,/const previousSavedState=saved\.map/);
+  assert.match(sync,/const previousSavedCheckHistoryState=savedCheckHistory\.map/);
+  assert.match(sync,/const previousAutoCheckMeta=\{\.\.\.autoCheckMeta\}/);
+  assert.match(sync,/assertCloudSyncSession\(syncUserId,syncGeneration\);[\s\S]*?writeStorageTransaction\(\[/);
+  assert.match(sync,/\\[SAVED_KEY,JSON\.stringify\(saved\)\\]/);
+  assert.match(sync,/\\[SAVED_CHECKS_KEY,JSON\.stringify\(savedCheckHistory\)\\]/);
+  assert.match(sync,/\\[AUTO_CHECK_KEY,JSON\.stringify\(autoCheckMeta\)\\]/);
+  assert.match(sync,/\\[cloudTombstonesStorageKey\(\),JSON\.stringify\(nextTombstones\)\\]/);
+  assert.match(sync,/catch\(error\)\s*\{\s*saved=previousSavedState;[\s\S]*?savedCheckHistory=previousSavedCheckHistoryState;[\s\S]*?autoCheckMeta=previousAutoCheckMeta;/);
+  assert.doesNotMatch(sync,/persistCloudTombstones\(/,
+    'the sync apply path must not persist tombstones ahead of the other local records');
+});
