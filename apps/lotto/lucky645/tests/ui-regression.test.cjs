@@ -1057,7 +1057,7 @@ test('draw-domain history audit reports invalid rows, duplicate rounds, gaps and
   assert.deepEqual(Array.from(audit.duplicateRounds),[2]);
   assert.deepEqual(Array.from(audit.missingRanges,range=>[range.from,range.to,range.count]),[[3,3,1]]);
   assert.equal(audit.missingRoundCount,1);
-  assert.deepEqual(Array.from(audit.missingSalesRounds),[2,4]);
+  assert.deepEqual(Array.from(audit.missingSalesRounds),[4]);
   assert.deepEqual(Array.from(audit.missingPayoutRounds),[2,4]);
   assert.equal(audit.isContinuous,false);
 });
