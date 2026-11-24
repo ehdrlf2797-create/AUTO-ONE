@@ -32,6 +32,10 @@ test('frontend draw normalization preserves official sales and payout without tr
   const draw = normalizeDraw(base);
   assert.equal(draw.totalSales, 116992886000);
   assert.equal(draw.totalPrizePayout, 58496443856);
+  const domain=context.Lucky645DataDomain.createDomain();
+  const [csvRoundTrip]=domain.mergeDraws([], [draw]);
+  assert.equal(csvRoundTrip.totalSales,116992886000,
+    'CSV sales must survive normalized merge and cache-style re-normalization');
 
   const missingOfficialSales = normalizeDraw({
     ...base,
@@ -1031,4 +1035,51 @@ test('draw-domain source trust order and merge preserve highest-trust winning nu
   assert.equal(merged.totalSales,500);
   assert.equal(merged.totalPrizePayout,250);
   assert.deepEqual(Array.from(merged.ranks,item=>[item.rank,item.prize,item.winners]),[[1,100,1],[2,10,3]]);
+});
+
+
+test('draw-domain history audit reports invalid rows, duplicate rounds, gaps and missing financial fields', () => {
+  const context={};
+  vm.runInNewContext(drawDomainSource,context);
+  const domain=context.Lucky645DataDomain.createDomain();
+  const input=[
+    {round:1,numbers:[1,2,3,4,5,6],bonus:7,totSellamnt:100,rlvtEpsdSumNtslAmt:50},
+    {round:2,numbers:[2,3,4,5,6,7],bonus:8,totSellamnt:200},
+    {round:2,numbers:[3,4,5,6,7,8],bonus:9,totSellamnt:300},
+    {round:4,numbers:[4,5,6,7,8,9],bonus:10},
+    {round:5,numbers:[1,1,2,3,4,5],bonus:6}
+  ];
+  const audit=domain.auditHistory(input);
+  assert.equal(audit.totalRows,5);
+  assert.equal(audit.validRowCount,4);
+  assert.equal(audit.invalidRowCount,1);
+  assert.equal(audit.uniqueRoundCount,3);
+  assert.deepEqual(Array.from(audit.duplicateRounds),[2]);
+  assert.deepEqual(Array.from(audit.missingRanges,range=>[range.from,range.to,range.count]),[[3,3,1]]);
+  assert.equal(audit.missingRoundCount,1);
+  assert.deepEqual(Array.from(audit.missingSalesRounds),[2,4]);
+  assert.deepEqual(Array.from(audit.missingPayoutRounds),[2,4]);
+  assert.equal(audit.isContinuous,false);
+});
+
+test('draw-domain audit accepts a continuous normalized feed with complete financial fields', () => {
+  const context={};
+  vm.runInNewContext(drawDomainSource,context);
+  const domain=context.Lucky645DataDomain.createDomain();
+  const draws=Array.from({length:3},(_,index)=>({
+    round:index+1,
+    numbers:[index+1,index+2,index+3,index+4,index+5,index+6],
+    bonus:index+7,
+    totalSales:1000+index,
+    totSellamnt:1000+index,
+    totalPrizePayout:500+index,
+    source:'동행복권 공식 API'
+  }));
+  const audit=domain.auditDraws(draws);
+  assert.equal(audit.totalRows,3);
+  assert.equal(audit.validRowCount,3);
+  assert.equal(audit.invalidRowCount,0);
+  assert.equal(audit.isContinuous,true);
+  assert.deepEqual(Array.from(audit.missingSalesRounds),[]);
+  assert.deepEqual(Array.from(audit.missingPayoutRounds),[]);
 });

@@ -86,15 +86,21 @@
         bonus,
         ranks,
         totalSales,
+        // Keep the canonical CSV sales field available for later cache/merge re-normalization.
+        totSellamnt: totalSales,
         totalPrizePayout,
         source: typeof raw.source === 'string' ? raw.source.slice(0, 80) : '공개 회차 데이터'
       };
     }
     
-    function extractDraws(json) {
+    function extractRawDrawRows(json) {
       let rows = Array.isArray(json) ? json : (json?.results || json?.data?.list || json?.list || json?.data || []);
       if (!Array.isArray(rows) && rows && typeof rows === 'object') rows = Object.values(rows);
-      return Array.isArray(rows) ? rows.map(normalizeDraw).filter(Boolean).sort((a,b)=>a.round-b.round) : [];
+      return Array.isArray(rows) ? rows : [];
+    }
+
+    function extractDraws(json) {
+      return extractRawDrawRows(json).map(normalizeDraw).filter(Boolean).sort((a,b)=>a.round-b.round);
     }
     
     function normalizeOfficial(raw, wantedRound = null) {
@@ -115,6 +121,56 @@
       return true;
     }
     
+    function auditDraws(draws, initialInvalidRows = 0, totalRows = null) {
+      const input = Array.isArray(draws) ? draws : [];
+      const validRows = input.filter(draw =>
+        draw && Number.isSafeInteger(draw.round) && draw.round >= 1 &&
+        Array.isArray(draw.numbers) && draw.numbers.length === 6 &&
+        new Set(draw.numbers).size === 6 &&
+        draw.numbers.every(number=>Number.isInteger(number)&&number>=1&&number<=45) &&
+        Number.isInteger(draw.bonus) && draw.bonus >= 1 && draw.bonus <= 45 &&
+        !draw.numbers.includes(draw.bonus)
+      ).sort((a,b)=>a.round-b.round);
+      const invalidRowCount = Math.max(0,Number(initialInvalidRows)||0) + input.length - validRows.length;
+      const roundCounts = new Map();
+      for (const draw of validRows) roundCounts.set(draw.round,(roundCounts.get(draw.round)||0)+1);
+      const uniqueRounds = [...roundCounts.keys()].sort((a,b)=>a-b);
+      const duplicateRounds = uniqueRounds.filter(round=>roundCounts.get(round)>1);
+      const missingRanges = [];
+      let expectedRound = 1;
+      for (const round of uniqueRounds) {
+        if (round > expectedRound) {
+          missingRanges.push({from:expectedRound,to:round-1,count:round-expectedRound});
+        }
+        expectedRound = Math.max(expectedRound,round+1);
+      }
+      const missingRoundCount = missingRanges.reduce((sum,range)=>sum+range.count,0);
+      const mergedUnique = mergeDraws([],validRows);
+      return {
+        totalRows: Number.isSafeInteger(totalRows) && totalRows >= 0 ? totalRows : input.length + Math.max(0,Number(initialInvalidRows)||0),
+        validRowCount: validRows.length,
+        invalidRowCount,
+        uniqueRoundCount: uniqueRounds.length,
+        duplicateRounds,
+        missingRanges,
+        missingRoundCount,
+        firstRound: uniqueRounds[0] ?? null,
+        lastRound: uniqueRounds.at(-1) ?? null,
+        missingSalesRounds: mergedUnique.filter(draw=>draw.totalSales==null).map(draw=>draw.round),
+        missingPayoutRounds: mergedUnique.filter(draw=>draw.totalPrizePayout==null).map(draw=>draw.round),
+        isContinuous: invalidRowCount===0 && duplicateRounds.length===0 &&
+          missingRoundCount===0 && isContinuousHistory(validRows),
+        draws: validRows
+      };
+    }
+
+    function auditHistory(json) {
+      const rawRows = extractRawDrawRows(json);
+      const normalized = rawRows.map(normalizeDraw);
+      const invalidRows = normalized.filter(draw=>!draw).length;
+      return auditDraws(normalized.filter(Boolean),invalidRows,rawRows.length);
+    }
+
     function sourceTrust(source) {
       const label = String(source || '');
       if (label.includes('동행복권')) return 50;
@@ -168,8 +224,11 @@
     return Object.freeze({
       normalizeDraw,
       extractDraws,
+      extractRawDrawRows,
       normalizeOfficial,
       isContinuousHistory,
+      auditDraws,
+      auditHistory,
       sourceTrust,
       mergeDraws
     });

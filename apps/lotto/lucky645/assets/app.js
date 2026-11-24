@@ -665,6 +665,19 @@ function hasRealDrawData(list) {
   return Array.isArray(list) && list.some(draw => draw && draw.source !== FALLBACK_DRAW.source);
 }
 
+function summarizeHistoryAudit(audit) {
+  const issues=[];
+  if(audit.invalidRowCount) issues.push('유효하지 않은 행 '+formatNumber(audit.invalidRowCount)+'개');
+  if(audit.duplicateRounds.length) issues.push('중복 회차 '+audit.duplicateRounds.slice(0,5).join(', ')+(audit.duplicateRounds.length>5?' 외 '+(audit.duplicateRounds.length-5)+'개':''));
+  if(audit.missingRoundCount) {
+    const ranges=audit.missingRanges.slice(0,4).map(range=>range.from===range.to?String(range.from):range.from+'~'+range.to);
+    issues.push('누락 회차 '+formatNumber(audit.missingRoundCount)+'개 ('+ranges.join(', ')+(audit.missingRanges.length>4?', …':'')+')');
+  }
+  if(audit.missingSalesRounds.length) issues.push('판매액 누락 '+formatNumber(audit.missingSalesRounds.length)+'회');
+  if(audit.missingPayoutRounds.length) issues.push('총 당첨금 누락 '+formatNumber(audit.missingPayoutRounds.length)+'회');
+  return issues.length?issues.join(' · '):'행·회차 정합성 이상 없음';
+}
+
 async function refreshData(showToast = true) {
   if (isRefreshing) return;
   isRefreshing = true;
@@ -686,8 +699,9 @@ async function refreshData(showToast = true) {
     for (const sourceUrl of API_ALL_SOURCES) {
       try {
         const remote = await getJson(sourceUrl, 12000);
-        const all = extractDraws(remote);
-        if (all.length >= 1000 && isContinuousHistory(all)) {
+        const audit = auditHistory(remote);
+        const all = audit.draws;
+        if (all.length >= 1000 && audit.isContinuous) {
           const sourceLabel = sourceUrl.startsWith('/api/') ? 'Vercel 서버 프록시 누적 JSON' : (sourceUrl.includes('raw.githubusercontent.com') ? 'GitHub 원본 JSON' : 'GitHub Pages 누적 데이터');
           all.forEach(draw => { draw.source = sourceLabel; });
           draws = mergeDraws(draws, all);
@@ -695,7 +709,7 @@ async function refreshData(showToast = true) {
           break;
         }
         if (all.length) draws = mergeDraws(draws, all);
-        errors.push('누적 데이터가 1회부터 끊김 없이 이어지지 않습니다.');
+        errors.push('누적 데이터 정합성 확인 실패: '+summarizeHistoryAudit(audit));
       } catch (error) { if (!isUnavailableLocalProxy(sourceUrl, error)) errors.push(`누적 데이터: ${error.message}`); }
     }
 
@@ -737,16 +751,20 @@ async function refreshData(showToast = true) {
       try {
         const csv = await getText(CSV_FALLBACK, 10000);
         const parsed = parseCsv(csv);
-        if (parsed.length >= 1000 && isContinuousHistory(parsed)) {
+        const csvAudit = auditDraws(parsed);
+        if (parsed.length >= 1000 && csvAudit.isContinuous) {
           parsed.forEach(draw => { draw.source = 'CSV 보조 사본'; });
           draws = mergeDraws(draws, parsed);
           historicalSource = historicalSource || 'Cashlogy CSV 자료';
-        } else if (parsed.length) errors.push('CSV 자료가 전체 회차를 포함하지 않습니다.');
+        } else if (parsed.length) errors.push('CSV 자료 정합성 확인 실패: '+summarizeHistoryAudit(csvAudit));
       } catch (error) { errors.push(`CSV 보조 자료: ${error.message}`); }
     }
 
     if (!draws.length) draws = [FALLBACK_DRAW];
     draws = mergeDraws([], draws);
+    const finalAudit = auditDraws(draws);
+    if(finalAudit.missingSalesRounds.length) errors.push('최종 보유 데이터: 판매액 누락 '+formatNumber(finalAudit.missingSalesRounds.length)+'회');
+    if(finalAudit.missingPayoutRounds.length) errors.push('최종 보유 데이터: 총 당첨금 누락 '+formatNumber(finalAudit.missingPayoutRounds.length)+'회');
     const newestAvailable = draws.at(-1) || FALLBACK_DRAW;
     latest = newestAvailable;
     const mergedOfficialLatest = officialLatest ? draws.find(draw => draw.round === officialLatest.round) : null;
@@ -779,7 +797,7 @@ async function refreshData(showToast = true) {
       latestSource = '확인 필요';
     }
 
-    dataReady = isContinuousHistory(draws);
+    dataReady = finalAudit.isContinuous;
     persistDraws();
     const syncSucceeded = Boolean(historicalSource || officialLatest || mirrorLatest);
     syncMeta.status = !syncSucceeded ? 'error' : (errors.length || !dataReady ? 'partial' : 'ok');
