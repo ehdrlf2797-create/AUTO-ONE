@@ -1120,13 +1120,8 @@ test('HTML escaping neutralizes hostile persisted text before it reaches dynamic
   ];
   for(const payload of payloads) {
     const escaped=context.escapeHtml(payload);
-    assert.ok(!escaped.includes('<img'));
-    assert.ok(!escaped.includes('<svg'));
-    assert.ok(!escaped.includes('<script'));
-    assert.ok(!escaped.includes('</td>'));
-    assert.ok(!escaped.includes(' onerror='));
-    assert.ok(!escaped.includes(' onload='));
-    assert.ok(!escaped.includes(' onmouseover='));
+    assert.ok(!escaped.includes('<'),'hostile input must not produce an HTML tag opener');
+    assert.ok(!escaped.includes('>'),'hostile input must not produce an HTML tag closer');
   }
   assert.equal(
     context.escapeHtml('<img src=x onerror=alert(1)>'),
