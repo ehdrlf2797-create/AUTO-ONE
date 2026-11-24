@@ -139,3 +139,13 @@ state, tests not run, unresolved risks, and actions not performed.
 4. Keep merge, production deployment, Supabase DDL/RLS changes and Auth settings changes outside autonomous scope until the corresponding release gates are verifiably complete.
 
 [Explore Plan & Ship in Codelit](https://codelit.io/plan-and-ship)
+
+## Browser persistence failure visibility (2026-11-25)
+
+- persistDraws now returns a success boolean rather than silently swallowing quota/storage errors. The live refresh path reports a clear warning when the current data is available in memory but the browser cache could not be saved; the refresh itself remains usable for the current session.
+- persistSyncMeta now reports its write result. The refresh status title includes a diagnostic when the synchronization metadata itself could not be persisted.
+- Added injected-storage success/failure tests and assertions that cache persistence failure is kept separate from live feed readiness.
+- **GitHub Actions Run #45449005862** on commit befb3f4045379bb618c8e740ba5374c8d097719a passed all three jobs: LUCKY 645 API/UI, Python 3.14 Ubuntu and Python 3.14 Windows.
+- **Preview READY:** https://auto-one-lucky645-d1idvq1j5-ehdrlf2797-3377.vercel.app
+- Research backup persistence was separately audited: at most five backups per user are retained; the global storage array preserves other-account entries, and backup creation rolls back in-memory changes when storage fails. No destructive global byte cap was added.
+- Browser quota behavior remains covered by injected storage tests only; real device quota exhaustion and authenticated browser verification remain untested.
