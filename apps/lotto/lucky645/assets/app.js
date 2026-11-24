@@ -620,6 +620,11 @@ function loadCachedDraws() {
 
 function persistSaved(nextSaved = saved) {
   const next = Array.isArray(nextSaved) ? nextSaved : saved;
+  // Keep existing oversized legacy collections editable/deletable, but never grow them.
+  if (next.length > MAX_SAVED_ENTRIES && next.length > saved.length) {
+    toast('번호 보관함이 최대 '+formatNumber(MAX_SAVED_ENTRIES)+'개를 초과한 상태입니다. 기존 조합을 삭제하거나 백업한 뒤 추가해 주세요.');
+    return false;
+  }
   try {
     appStorageSet(SAVED_KEY, JSON.stringify(next));
   } catch (_) {
