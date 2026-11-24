@@ -2116,7 +2116,11 @@ function exportSavedBackup() {
   const link=document.createElement('a');
   link.href=url;link.download='lucky645-full-recovery-'+new Date().toISOString().slice(0,10)+'.json';
   document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  toast('전체 복구 백업을 저장했습니다. 표시 중인 최근 이력뿐 아니라 브라우저 원본 저장 기록을 포함합니다.');
+  if(blob.size>MAX_BACKUP_FILE_SIZE) {
+    toast('복구 백업 파일을 저장했지만 12MiB를 초과해 앱에서 바로 불러올 수 없습니다. 원본 파일을 별도로 안전하게 보관해 주세요.');
+  } else {
+    toast('저장 번호·전체 당첨 확인 이력·자동 확인 기준을 복구 백업으로 저장했습니다.');
+  }
 }
 function writeStorageTransaction(entries) {
   if (!Array.isArray(entries) || entries.some(entry => !Array.isArray(entry) || entry.length !== 2)) {
@@ -2174,7 +2178,7 @@ async function importSavedBackup(file) {
       if(normalizedSaved.some(item=>!item)||normalizedHistory.some(item=>!item)) {
         throw new Error('전체 복구 백업에 유효하지 않은 저장 기록이 있어 복원을 중단했습니다. 원본 파일은 변경되지 않았습니다.');
       }
-      if(!confirm('전체 복구 백업에는 표시 제한을 넘는 과거 확인 이력도 포함될 수 있습니다. 현재 계정의 번호 보관함·확인 이력·자동 확인 기준을 백업 내용으로 교체합니다. 먼저 현재 데이터를 별도로 내보냈는지 확인한 뒤 계속할까요?')) return;
+      if(!confirm('전체 복구 백업에는 표시 제한을 넘는 과거 확인 이력도 포함될 수 있습니다. 이 브라우저의 현재 계정 로컬 번호 보관함·확인 이력·자동 확인 기준을 백업 내용으로 교체합니다. 클라우드 데이터 전체를 교체하는 기능은 아닙니다. 먼저 현재 데이터를 별도로 내보냈는지 확인한 뒤 계속할까요?')) return;
       assertAccountScope(importOwner,importGeneration);
       const restoredMeta={
         lastRound:Number.isInteger(Number(archiveMeta.lastRound))&&Number(archiveMeta.lastRound)>0?Number(archiveMeta.lastRound):0,
@@ -2193,7 +2197,7 @@ async function importSavedBackup(file) {
       updateTopStats();
       renderSavedReports();
       if(savedBacktestResult)runSavedBacktest();
-      toast('전체 복구 백업을 복원했습니다. 보관함 '+formatNumber(saved.length)+'개, 전체 확인 이력 '+formatNumber(normalizedHistory.length)+'건을 저장했습니다.');
+      toast('이 브라우저 로컬 복구를 완료했습니다. 보관함 '+formatNumber(saved.length)+'개, 전체 확인 이력 '+formatNumber(normalizedHistory.length)+'건을 저장했습니다.');
       return;
     }
     const raw = filePayload;
