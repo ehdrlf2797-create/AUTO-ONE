@@ -105,35 +105,37 @@ state, tests not run, unresolved risks, and actions not performed.
 
 | Item | Status | Evidence | Remaining action |
 |---|---|---|---|
-| Sales/payout field mapping | Implemented and audited across 1,251 rounds | Historical source comparison and regression tests | Maintain official source precedence |
-| Duplicate-prize rejection | Implemented in API and frontend normalization | Duplicate-rank regression; Run #45443096100 passed | None known |
-| Account-switch refresh guard | Implemented | Delayed refresh response regression; full CI | Preserve in later auth changes |
-| CSV formula injection | Fixed and extracted to export-utils.js | Prefix vectors and export module tests | None known |
-| Backup restore consistency | Staged multi-key writes with rollback | Commit/rollback tests | Real-browser quota failure test outstanding |
-| Saved data bounds | 10,000 combinations / 50,000 history rows | Import/save/cloud-merge boundary tests | Review old oversized local data with export-first recovery |
-| Account storage module | Extracted to storage-scope.js | First-account migration, isolation, migration-failure tests | None known |
-| Monte Carlo simulation | Typed-array scratch buffers; seeded output preserved | 25k equivalence; 1M smoke; CI ≈1,380ms | Target Android performance not measured |
-| Data-source adapter | Extracted to data-source.js with 16MiB JSON / 8MiB text limits | Source order, request options, timeouts, malformed/oversize responses, CSV edge tests; Run #45443096100 | Live source freshness reconciliation remains a separate operational check |
-| HTML sink source review | No executable DOM XSS reproduced in reviewed paths | Source review only | Authenticated browser penetration testing remains open |
-| Supabase tenant isolation | RLS, policies, grants and indexes inspected read-only | Owner-only authenticated policies on both tables | Leaked-password protection warning remains; no connector setting-write action |
-| Authenticated browser verification | Not completed | TinyFish wallet -$0.312; host web inspection inaccessible | Requires a working authorized browser session |
-| Merge / production release | Not attempted | PR #32 Draft/open/unmerged | Release gate after authenticated verification and full review |
+| Sales/payout mapping | Implemented and audited across rounds 1–1251 | Historical CSV/JSON comparison and regression fixtures | Maintain source precedence |
+| Duplicate prize-rank rejection | Implemented in API and domain normalizer | Duplicate-rank tests; Run #45445283338 passed | None known |
+| Account-switch refresh guard | Implemented | Delayed refresh race test; full CI | Preserve in future auth refactor |
+| CSV formula injection | Fixed and extracted to export-utils.js | Prefix vectors and module tests | None known |
+| Backup restore consistency | Transactional multi-key writes with best-effort rollback | Commit/rollback regression tests | Browser quota failure remains untested |
+| Saved data bounds | 10,000 combinations / 50,000 check-history rows | Import/save/cloud merge boundary tests | Legacy oversized storage review |
+| Account storage | Extracted into storage-scope.js | Migration failure and account isolation tests | None known |
+| Data source adapter | Extracted with 16 MiB JSON / 8 MiB text caps | Source order, timeout, status, malformed/oversize response and CSV tests | Monitor external source freshness |
+| Draw domain | Extracted into draw-domain.js | Normalization, official API selection, source trust, merge and continuity tests | None known |
+| Feed quality audit | Structured invalid/duplicate/gap and missing financial-field report integrated in refreshData | Deterministic JSON/CSV fixtures; Run #45445283338 passed | Add live source freshness snapshots when fixtures are refreshed |
+| CSV sales round-trip | Preserves canonical totSellamnt through parse/merge/cache re-normalization | Dedicated regression test | None known |
+| Monte Carlo simulation | Typed-array scratch buffers; previous seeded draw sequence preserved | 25k equivalence and 1M CI smoke (~1,380 ms CI host) | Android profiling not available in current environment |
+| HTML sink review | No executable DOM XSS reproduced in inspected persisted paths | Source review only | Browser penetration testing remains open |
+| Supabase isolation | RLS/policies/grants/indexes read-only reviewed | Auth owner-only policies; Security Advisor warning documented | Leaked-password protection remains disabled; connector has no Auth settings writer |
+| Authenticated visual verification | Not completed | TinyFish unavailable (-$0.312); direct Preview fetch inaccessible from web host | Authorized browser session required |
+| Merge / production release | Not attempted | PR #32 remains Draft/open/unmerged | Explicit release gate after browser testing |
 
 ## Latest verified acceptance evidence
 
-- **CI Run #45443096100** on commit 6ca8be92291a3d794d72bdea704627f96d0ee769: all three jobs passed (LUCKY 645 API/frontend, Python 3.14 Ubuntu, Python 3.14 Windows).
-- **Vercel Preview:** READY — https://auto-one-lucky645-ongse7ae8-ehdrlf2797-3377.vercel.app
-- 16 MiB JSON and 8 MiB text/CSV response caps; Content-Length and decoded body length checks; malformed CSV quote rejection; original source order retained.
-- Supabase RLS remains enabled with authenticated owner-only policies on both LUCKY 645 tables. Security Advisor's leaked-password protection warning remains; official guidance: https://supabase.com/docs/guides/auth/password-security
-- HTML review remains source-level. No browser penetration test or authenticated UI test is claimed.
-- PR #32 remains Draft/open/unmerged. No production deployment or Supabase schema/RLS/Auth-setting mutation was performed.
+- **CI Run #45445283338** on ae8203e7ac49cfa76684f4d0ed875391dcfeca0b: all three jobs passed (LUCKY 645 API/frontend, Python 3.14 Ubuntu, Python 3.14 Windows).
+- **Vercel Preview READY:** https://auto-one-lucky645-qsihkv9jd-ehdrlf2797-3377.vercel.app
+- The domain audit distinguishes invalid rows, duplicate round IDs, missing round ranges, missing sales and missing payout values; incomplete financial data remains explicit and is not changed to zero.
+- Normalized records preserve totSellamnt so authoritative CSV sales remain available through cache restoration and trusted-source merging.
+- Supabase Security Advisor leaked-password protection warning remains; official guidance: https://supabase.com/docs/guides/auth/password-security. No Supabase configuration or database change was made.
+- Browser/authenticated XSS testing and Android-device profiling remain outstanding. PR #32 remains Draft/open/unmerged.
 
 ## Next concrete actions
 
-1. Add a deterministic historical-feed integrity smoke test for continuous rounds, duplicate IDs/rounds, field presence and latest-round reconciliation, using locally stored fixtures rather than live external dependencies.
-2. Extract draw normalization and trust-ranked merge logic as a separate pure module, preserving official sales/payout mapping and duplicate-rank rejection.
-3. Measure 100-strategy research and the 1,000,000-draw simulation on representative Android devices; profile time and memory with reproducible seeds.
-4. Review legacy oversized localStorage records and define an export-first, no-data-loss recovery path before adding a byte budget.
-5. Keep authenticated browser verification, merge, production deploy and Supabase Auth setting changes as separately evidenced release gates; the current connector has no Auth-setting write action.
+1. Continue the read-only storage audit: inventory every persisted key, payload shape, write frequency and error-handling path; do not impose byte limits until a no-data-loss export/recovery path is implemented.
+2. Continue persisted/imported HTML sink testing with hostile-but-inert fixtures and verify escaped rendering contracts. Keep authenticated browser verification as a distinct release gate.
+3. Add an offline benchmark harness for 100-strategy research and 1,000,000-draw simulation; run it on a representative Android device when a user-controlled device/browser session is available.
+4. Keep merge, production deployment, Supabase DDL/RLS changes and Auth settings changes outside autonomous scope until the corresponding release gates are verifiably complete.
 
 [Explore Plan & Ship in Codelit](https://codelit.io/plan-and-ship)

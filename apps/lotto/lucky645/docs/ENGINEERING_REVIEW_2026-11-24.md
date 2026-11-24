@@ -174,3 +174,18 @@ Files:
 - The immediately preceding source-priority/script-order commit e4ea43610237d9d0bd7493afaace181e6fafaa0e also passed all 3 CI jobs in Run #45442749842.
 - Authenticated visual/browser penetration testing remains incomplete. TinyFish execution could not start with a -$0.312 wallet balance and no credit top-up was made. Direct web page inspection also failed at the host, so neither is counted as a browser test.
 - Supabase Security Advisor's leaked-password protection warning remains. Official Supabase documentation states the setting is configured in Auth settings and is available on Pro and above. The connected Supabase tools expose read/audit and database operations but no Auth security-setting update action; no setting change was attempted.
+## Draw-domain extraction, feed diagnostics and sales round-trip fix (2026-11-25)
+
+- Extracted normalizeDraw, extractDraws/raw-row extraction, normalizeOfficial, isContinuousHistory, sourceTrust and mergeDraws into assets/draw-domain.js. The app and data-source adapter now consume a single pure domain implementation loaded before app.js.
+- Added auditHistory/auditDraws to report raw-row count, valid/invalid rows, duplicate round IDs, compressed missing-round ranges, first/last round, missing sales rounds and missing payout rounds. The audit checks structural continuity separately from financial-field completeness.
+- refreshData now records structured diagnostics for rejected cumulative JSON and CSV feeds. Final readiness is derived from the audit rather than a simple filtered-array length check. Financial missingness is reported without fabricating zero values.
+- Found and fixed a sales-value round-trip defect: normalized draw records previously stored totalSales but omitted the authoritative source alias. A later cache restore or merge re-normalized the record and could discard the sales amount. Normalized records now retain the canonical totSellamnt value, which is accepted by the same sales-field precedence. Regression test covers CSV parse -> normalized draw -> merge/cache-style re-normalization.
+- New deterministic fixtures cover invalid rows, duplicate rounds, missing round ranges, missing sales/payout values, fully continuous normalized feeds, official nested API selection, trust ordering and financial enrichment.
+
+## Latest draw-domain and feed-audit verification
+
+- **GitHub Actions Run #45445283338** on code/test commit ae8203e7ac49cfa76684f4d0ed875391dcfeca0b passed all three jobs: LUCKY 645 API/UI, Python 3.14 Ubuntu and Python 3.14 Windows.
+- **Vercel Preview READY:** https://auto-one-lucky645-qsihkv9jd-ehdrlf2797-3377.vercel.app
+- The preceding domain-extraction commit b5914f9567a1616e689c7c545d1d6902f359042f passed its subsequent harness-fix commit's entire CI in Run #45444180443; no failed code was retained as current head.
+- Browser visual testing, authenticated browser penetration tests and actual Android-device profiling remain uncompleted. TinyFish wallet is negative (-$0.312); no top-up was made.
+- No production deployment, main merge or Supabase schema/RLS/Auth setting mutation.
