@@ -1193,6 +1193,7 @@ test('common saved persistence guard blocks growth past the cap but allows legac
   const existing=Array.from({length:10001},(_,index)=>({id:'legacy-'+index,numbers:[1,2,3,4,5,6]}));
   let writes=0,rendered=0,toastMessage='',storedValue=null;
   const context={
+    SAVED_KEY:'saved-key',
     saved:existing,
     savedBacktestResult:null,
     MAX_SAVED_ENTRIES:10000,
