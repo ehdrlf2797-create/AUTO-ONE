@@ -1279,6 +1279,7 @@ test('full recovery archive restore validates every record, confirms replacement
   const end=app.indexOf('\nfunction modeLabel(mode)',start);
   const importer=app.slice(start,end);
   assert.match(importer,/schema==='lucky645-local-recovery-v1'/);
+  assert.match(importer,/const filePayload = JSON\.parse\(fileText\);[\s\S]*?const archive=filePayload\.storage;/);
   assert.match(importer,/normalizedSaved\.some\(item=>!item\)\|\|normalizedHistory\.some\(item=>!item\)/);
   assert.match(importer,/if\(!confirm\(/);
   assert.match(importer,/writeStorageTransaction\(\[/);
