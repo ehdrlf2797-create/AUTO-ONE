@@ -139,3 +139,11 @@ state, tests not run, unresolved risks, and actions not performed.
 4. Keep merge, production deployment, Supabase DDL/RLS changes and Auth settings changes outside autonomous scope until the corresponding release gates are verifiably complete.
 
 [Explore Plan & Ship in Codelit](https://codelit.io/plan-and-ship)
+
+## Cloud sync and HTML safety follow-up (2026-11-25)
+
+- Cloud sync local apply now commits saved rows, check history, auto-check metadata and account tombstones together through the rollback-aware storage transaction. It restores in-memory state if persistence fails.
+- CI Run #45447686827 passed 3/3 jobs for commit 9b4878c0659a06a12cdf9bb3b5fb51dc1ca0ed88.
+- Added inert HTML-like payload tests and output-boundary assertions for saved reports, PDF, research labels/notes, and cloud error status. This is not a browser penetration test.
+- Preview READY: https://auto-one-lucky645-cuo74vw1f-ehdrlf2797-3377.vercel.app.
+- Browser-based testing remains incomplete due TinyFish wallet balance -$0.312; no credit purchase was attempted.
