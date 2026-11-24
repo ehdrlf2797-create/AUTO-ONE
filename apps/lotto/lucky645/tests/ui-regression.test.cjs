@@ -1191,13 +1191,13 @@ test('common saved persistence guard blocks growth past the cap but allows legac
   const end=app.indexOf('\nfunction persistDraws()',start);
   assert.ok(start>=0&&end>start);
   const existing=Array.from({length:10001},(_,index)=>({id:'legacy-'+index,numbers:[1,2,3,4,5,6]}));
-  let writes=0,rendered=0,toastMessage='';
+  let writes=0,rendered=0,toastMessage='',storedValue=null;
   const context={
     saved:existing,
     savedBacktestResult:null,
     MAX_SAVED_ENTRIES:10000,
     formatNumber:value=>Number(value).toLocaleString('en-US'),
-    appStorageSet:()=>{writes++;},
+    appStorageSet:(key,value)=>{writes++;storedValue=value;},
     toast:message=>{toastMessage=message;},
     renderSaved:()=>{rendered++;},
     updateTopStats:()=>{},
@@ -1215,10 +1215,12 @@ test('common saved persistence guard blocks growth past the cap but allows legac
   assert.equal(context.persistSaved(existing.slice(1)),true,
     'a legacy collection may be reduced below the cap');
   assert.equal(writes,1);
+  assert.equal(JSON.parse(storedValue).length,10000);
   assert.equal(context.saved.length,10000);
   assert.equal(rendered,1);
 
   assert.equal(context.persistSaved(context.saved.map(item=>({...item,favorite:true}))),true,
     'in-place-size edits remain available for existing oversized data');
   assert.equal(writes,2);
+  assert.equal(JSON.parse(storedValue).length,10000);
 });
